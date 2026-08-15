@@ -10,7 +10,8 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "markets": "node scripts/markets.ts",
-    "dry-run": "node scripts/dry-run.ts"
+    "dry-run": "node scripts/dry-run.ts",
+    "preflight": "node scripts/preflight.ts"
   },
   "dependencies": {
     "viem": "^2.55.16"
