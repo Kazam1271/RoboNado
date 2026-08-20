@@ -29,7 +29,13 @@ export interface MarketMeta {
   tradingStatus: TradingStatus;
   priceIncrementX18: bigint;
   sizeIncrement: bigint;
-  minSize: bigint;
+  /**
+   * Minimum order value in quote terms (x18), despite the API calling it
+   * min_size. Every market reports 100 — including BTC, where 100 BTC would
+   * be millions — and the live book carries resting orders far smaller than
+   * that, so it is a 100 USDT0 notional floor, not a base-unit count.
+   */
+  minNotionalX18: bigint;
   makerFeeRateX18: bigint;
   takerFeeRateX18: bigint;
 }
@@ -148,7 +154,7 @@ export async function loadMarkets(
       tradingStatus: m.trading_status as TradingStatus,
       priceIncrementX18: BigInt(m.price_increment_x18),
       sizeIncrement: BigInt(m.size_increment),
-      minSize: BigInt(m.min_size),
+      minNotionalX18: BigInt(m.min_size),
       makerFeeRateX18: BigInt(m.maker_fee_rate_x18),
       takerFeeRateX18: BigInt(m.taker_fee_rate_x18),
     });

@@ -30,7 +30,10 @@ if (!account.exists) {
   process.exit(0);
 }
 
-const usd = (v: bigint) => `$${fromX18(v, 2)}`;
+const usd = (v: bigint) => (v < 0n ? `-$${fromX18(-v, 2)}` : `$${fromX18(v, 2)}`);
+
+/** Explicit sign on anything that can be a loss — never render one as a gain. */
+const signedUsd = (v: bigint) => (v < 0n ? `-$${fromX18(-v, 2)}` : `+$${fromX18(v, 2)}`);
 
 console.log(`account   ${address}\n`);
 console.log(`equity            ${usd(account.equityX18)}`);
@@ -51,8 +54,6 @@ if (!account.positions.length) {
 } else {
   console.log('\npositions');
   for (const p of account.positions) {
-    const pnl = Number(fromX18(p.unrealizedPnlX18, 2));
-    const arrow = pnl >= 0 ? '+' : '';
     console.log(
       `\n  ${p.symbol}  ${p.side.toUpperCase()}  (${p.assetClass})`,
     );
@@ -60,8 +61,8 @@ if (!account.positions.length) {
     console.log(`    entry       ${fromX18(p.entryPriceX18, 4)}`);
     console.log(`    mark        ${fromX18(p.oraclePriceX18, 4)}`);
     console.log(`    notional    ${usd(p.notionalX18)}   (${p.leverage.toFixed(1)}x of equity)`);
-    console.log(`    unrealized  ${arrow}${usd(p.unrealizedPnlX18).replace('$-', '$')}`);
-    console.log(`    funding     ${usd(p.fundingX18)}   (unsettled, estimate)`);
+    console.log(`    unrealized  ${signedUsd(p.unrealizedPnlX18)}`);
+    console.log(`    funding     ${signedUsd(p.fundingX18)}   (unsettled, estimate)`);
     console.log(
       `    liquidation ${
         p.liquidationPriceX18 === null

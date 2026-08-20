@@ -31,6 +31,7 @@ export const ERROR_CODES: Record<number, string> = {
   2028: 'InvalidSigner',
   2031: 'FillOrKillNotFilled',
   2036: 'SubaccountHealthTooLow',
+  2070: 'MaxOpenInterest',
   2118: 'InvalidBuilder',
 };
 
@@ -49,6 +50,10 @@ const HINTS: Record<number, string> = {
   2118:
     'Builder ID is unregistered, or the fee rate is outside the bounds ' +
     'configured for it. Verify ROBONADO_BUILDER_ID matches an approved builder.',
+  2070:
+    'This market is at its open-interest cap and is accepting closing orders ' +
+    'only. Both min_size and max_open_interest are denominated in quote ' +
+    'notional, not base units.',
   2007:
     'Limit price must sit between 20% and 500% of the oracle price. A price ' +
     'this far out is usually a decimal-scale mistake.',

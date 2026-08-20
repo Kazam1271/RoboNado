@@ -19,7 +19,7 @@ import {
   signOrder,
   type OrderMessage,
 } from './signing.ts';
-import { roundToIncrement, signedAmount, toX18 } from './units.ts';
+import { fromX18, ONE_X18, roundToIncrement, signedAmount, toX18 } from './units.ts';
 
 /** Orders expire at this many seconds from now unless told otherwise. */
 export const DEFAULT_EXPIRATION_SECONDS = 60 * 60;
@@ -88,14 +88,21 @@ export function buildOrder(network: Network, params: BuildOrderParams): Prepared
       `size ${size} rounds to zero at ${market.symbol}'s increment; the minimum is larger`,
     );
   }
-  if (roundedSize < market.minSize) {
-    throw new Error(
-      `size ${size} is below ${market.symbol}'s minimum order size`,
-    );
-  }
 
   const roundedPrice = roundToIncrement(toX18(price), market.priceIncrementX18);
   if (roundedPrice <= 0n) throw new Error('price must be positive');
+
+  // min_size is a notional floor in quote terms, not a base-unit count. Every
+  // market reports 100 — including BTC, where 100 BTC would be millions — and
+  // the live book carries resting orders of 0.023 XAUT and 0.05 BTC, well under
+  // any base-unit reading of the field.
+  const notionalX18 = (roundedPrice * roundedSize) / ONE_X18;
+  if (notionalX18 < market.minNotionalX18) {
+    throw new Error(
+      `${size} ${market.symbol} at ${price} is $${fromX18(notionalX18, 2)} notional; ` +
+        `the minimum is $${fromX18(market.minNotionalX18, 2)}`,
+    );
+  }
 
   const appendixParams: AppendixParams = {
     orderType,
