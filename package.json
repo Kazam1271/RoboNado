@@ -13,9 +13,12 @@
     "dry-run": "node scripts/dry-run.ts",
     "preflight": "node scripts/preflight.ts",
     "trade": "node --env-file-if-exists=.env scripts/trade.ts",
-    "account": "node scripts/account.ts"
+    "account": "node scripts/account.ts",
+    "chat": "node --env-file-if-exists=.env scripts/chat.ts"
   },
   "dependencies": {
-    "viem": "^2.55.16"
+    "@anthropic-ai/sdk": "^0.120.0",
+    "viem": "^2.55.16",
+    "zod": "^4.4.3"
   }
 }
