@@ -16,8 +16,20 @@ import { randomInt } from 'node:crypto';
 export const NONCE_RANDOM_BITS = 20n;
 const RANDOM_MASK = (1n << NONCE_RANDOM_BITS) - 1n;
 
-/** Default in-flight allowance. Nado's own examples use 50ms. */
-export const DEFAULT_RECV_WINDOW_MS = 50;
+/**
+ * How long an order may stay in flight before the engine discards it.
+ *
+ * Nado's docs use 50ms, which suits a bot colocated with the sequencer in
+ * Tokyo and fails immediately (error 2011 LateRecvExecution) from anywhere
+ * else — the request is stale before it lands. The engine accepts any
+ * recv_time up to 100s ahead, rejecting beyond that with 2012
+ * EarlyRecvExecution, so this sits well inside the band while tolerating a
+ * slow or distant connection.
+ */
+export const DEFAULT_RECV_WINDOW_MS = 20_000;
+
+/** The engine rejects recv_time more than this far ahead (error 2012). */
+export const MAX_RECV_WINDOW_MS = 100_000;
 
 export interface NonceParts {
   recvTimeMs: bigint;
