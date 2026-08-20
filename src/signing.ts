@@ -124,3 +124,48 @@ export function serializeOrder(order: OrderMessage) {
     appendix: order.appendix.toString(),
   };
 }
+
+// ── Cancellations ────────────────────────────────────────────────────────────
+// Unlike orders, cancellations sign against the endpoint address, not
+// address(productId) — one domain covers a cancel spanning several products.
+
+export const CANCELLATION_TYPES = {
+  Cancellation: [
+    { name: 'sender', type: 'bytes32' },
+    { name: 'productIds', type: 'uint32[]' },
+    { name: 'digests', type: 'bytes32[]' },
+    { name: 'nonce', type: 'uint64' },
+  ],
+} as const;
+
+export interface CancellationMessage {
+  sender: `0x${string}`;
+  productIds: number[];
+  digests: `0x${string}`[];
+  nonce: bigint;
+}
+
+export async function signCancellation(
+  account: Account,
+  network: Network,
+  message: CancellationMessage,
+): Promise<`0x${string}`> {
+  if (!account.signTypedData) {
+    throw new Error('account cannot sign typed data');
+  }
+  return account.signTypedData({
+    domain: endpointDomain(network),
+    types: CANCELLATION_TYPES,
+    primaryType: 'Cancellation',
+    message,
+  });
+}
+
+export function serializeCancellation(message: CancellationMessage) {
+  return {
+    sender: message.sender,
+    productIds: message.productIds,
+    digests: message.digests,
+    nonce: message.nonce.toString(),
+  };
+}

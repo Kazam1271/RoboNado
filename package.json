@@ -11,7 +11,8 @@
     "test": "node --test test/*.test.ts",
     "markets": "node scripts/markets.ts",
     "dry-run": "node scripts/dry-run.ts",
-    "preflight": "node scripts/preflight.ts"
+    "preflight": "node scripts/preflight.ts",
+    "trade": "node --env-file-if-exists=.env scripts/trade.ts"
   },
   "dependencies": {
     "viem": "^2.55.16"
