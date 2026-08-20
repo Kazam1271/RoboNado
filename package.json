@@ -14,7 +14,8 @@
     "preflight": "node scripts/preflight.ts",
     "trade": "node --env-file-if-exists=.env scripts/trade.ts",
     "account": "node scripts/account.ts",
-    "chat": "node --env-file-if-exists=.env scripts/chat.ts"
+    "chat": "node --env-file-if-exists=.env scripts/chat.ts",
+    "bot": "node --env-file-if-exists=.env scripts/bot.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
