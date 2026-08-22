@@ -50,7 +50,13 @@ console.log('Ask anything. "confirm <token>" approves a prepared order. Ctrl+C t
 const rl = createInterface({ input: stdin, output: stdout });
 
 for (;;) {
-  const input = (await rl.question('> ')).trim();
+  let input: string;
+  try {
+    input = (await rl.question('> ')).trim();
+  } catch {
+    // stdin closed — piped input ran out, or Ctrl+D. Not an error.
+    break;
+  }
   if (!input) continue;
   if (input === 'exit' || input === 'quit') break;
 
