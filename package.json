@@ -21,5 +21,8 @@
     "@anthropic-ai/sdk": "^0.120.0",
     "viem": "^2.55.16",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "sharp": "^0.34.5"
   }
 }
