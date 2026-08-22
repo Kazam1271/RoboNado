@@ -1,0 +1,57 @@
+# Render blueprint for the RoboNado Telegram bot.
+#
+# A background worker, not a web service: the bot long-polls Telegram and
+# serves no HTTP. Free web services also idle down after inactivity, which for
+# a long-polling bot means it simply stops answering.
+#
+# Secrets are marked `sync: false` — Render prompts for them in the dashboard
+# and never reads them from this file. Nothing secret belongs in the repo.
+
+services:
+  - type: worker
+    name: robonado-bot
+    runtime: node
+    plan: starter
+    region: frankfurt
+    branch: main
+    buildCommand: npm ci
+    startCommand: node scripts/bot.ts
+    envVars:
+      # Node 22.6+ required: the sources are erasable TypeScript run directly,
+      # with no build step.
+      - key: NODE_VERSION
+        value: "24"
+
+      # testnet or mainnet. Deliberately pinned here rather than left to the
+      # default, so the deployed network is visible in version control.
+      - key: NADO_NETWORK
+        value: testnet
+
+      # 0 until Nado issues a Builder ID. Orders stay unattributed and no fee
+      # is charged to anyone.
+      - key: ROBONADO_BUILDER_ID
+        value: "0"
+
+      # --- set these in the Render dashboard, never here ---
+
+      # From @BotFather. Anyone holding it controls the bot.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+
+      # Comma-separated Telegram user ids allowed to trade. Leave unset and the
+      # bot answers questions but prepares no orders — the safe default.
+      - key: TELEGRAM_ALLOWED_USER_IDS
+        sync: false
+
+      # Signs orders. Use a wallet holding only what you accept losing.
+      - key: NADO_PRIVATE_KEY
+        sync: false
+
+      # Optional. Without it the bot still works as slash commands.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+# Note: Telegram permits exactly one getUpdates consumer per bot token. Once
+# this worker is live, a local `npm run bot` on the same token will fight it —
+# both log "Conflict: terminated by other getUpdates request" and messages go
+# to whichever polled last. Stop one, or give local development its own bot.

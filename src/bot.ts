@@ -35,6 +35,8 @@ export interface BotOptions {
   allowedUserIds: Set<number>;
   /** Absent when no Anthropic key is configured; commands still work. */
   copilot?: Copilot;
+  /** Aborted on SIGTERM so a deploy drains in-flight work before exiting. */
+  signal?: AbortSignal;
   policy?: RiskPolicy;
 }
 
@@ -84,7 +86,7 @@ export async function runBot(options: BotOptions): Promise<void> {
    */
   const queues = new Map<number, Promise<void>>();
 
-  for await (const message of telegram.messages()) {
+  for await (const message of telegram.messages(options.signal)) {
     const chatId = message.chat.id;
     const previous = queues.get(chatId) ?? Promise.resolve();
 
@@ -104,6 +106,12 @@ export async function runBot(options: BotOptions): Promise<void> {
 
     queues.set(chatId, next);
   }
+
+  // The loop above exits on abort. Let queued work finish before returning:
+  // a deploy arriving between "order prepared" and "reply sent" should still
+  // tell the trader what happened.
+  await Promise.allSettled([...queues.values()]);
+  console.log('drained, shutting down');
 
   async function handle(message: TelegramMessage): Promise<void> {
     const text = (message.text ?? '').trim();

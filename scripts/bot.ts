@@ -58,8 +58,18 @@ const copilot = hasAnthropicKey
   ? new Copilot({ network: NETWORK, gateway, address, account, builderId })
   : undefined;
 
+// Render sends SIGTERM on every deploy; drain rather than dying mid-order.
+const shutdown = new AbortController();
+for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(sig, () => {
+    console.log(`${sig} received — finishing in-flight messages`);
+    shutdown.abort();
+  });
+}
+
 await runBot({
   telegram: new TelegramBot(botToken),
+  signal: shutdown.signal,
   network: NETWORK,
   gateway,
   address,
