@@ -21,7 +21,7 @@ import { fetchAccount } from './positions.ts';
 import { resolveMarket, UnknownMarketError } from './resolve.ts';
 import { toSubaccountHex } from './subaccount.ts';
 import { TelegramBot, type TelegramMessage } from './telegram.ts';
-import { createTools } from './tools.ts';
+import { createTools, describePending } from './tools.ts';
 import { fromX18 } from './units.ts';
 
 export interface BotOptions {
@@ -181,13 +181,17 @@ export async function runBot(options: BotOptions): Promise<void> {
           return telegram.sendMessage(chatId, `usage: ${command} 120 gold`);
         }
         await telegram.sendTyping(chatId);
+        // Goes through prepareOrder rather than the model's tool so the reply
+        // is written for a person — the tool's text instructs the model and
+        // reads as nonsense to a user.
+        const prepared = await tools.prepareOrder({
+          market,
+          side: command === '/buy' ? 'buy' : 'sell',
+          notionalUsd: amount,
+        });
         return telegram.sendMessage(
           chatId,
-          await byName.place_order.run({
-            market,
-            side: command === '/buy' ? 'buy' : 'sell',
-            notionalUsd: amount,
-          }),
+          prepared.ok ? describePending(prepared.pending) : prepared.reason,
         );
       }
 

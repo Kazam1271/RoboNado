@@ -45,8 +45,42 @@ export interface PendingOrder {
   createdAt: number;
 }
 
-/** Approvals expire so a confirmation cannot be replayed against a stale book. */
-export const PENDING_TTL_MS = 2 * 60 * 1000;
+/**
+ * Approvals expire so a confirmation cannot be replayed against a stale book.
+ * Long enough to read the summary and copy a token on a phone, short enough
+ * that the quoted price still resembles the market when it is signed.
+ */
+export const PENDING_TTL_MS = 5 * 60 * 1000;
+
+export interface PrepareParams {
+  market: string;
+  side: 'buy' | 'sell';
+  notionalUsd: number;
+  limitPrice?: number;
+  intent?: 'open' | 'close';
+}
+
+/**
+ * Renders a prepared order for a person, with the exact command to approve it.
+ *
+ * Kept separate from the tool's return value, which is written for the model
+ * and carries instructions ("you cannot confirm it yourself") that are noise —
+ * or worse, confusing — when shown to a human.
+ */
+export function describePending(entry: PendingOrder): string {
+  const minutes = Math.round(PENDING_TTL_MS / 60000);
+  return [
+    'PREPARED — not sent.',
+    '',
+    entry.summary,
+    `fee: ${entry.prepared.builderFeeQuote} USDT0`,
+    '',
+    'To place it, send:',
+    `/confirm ${entry.token}`,
+    '',
+    `Expires in ${minutes} minutes, after which it must be priced again.`,
+  ].join('\n');
+}
 
 export function createTools(ctx: CopilotContext) {
   const policy = ctx.policy ?? DEFAULT_POLICY;
@@ -139,6 +173,83 @@ export function createTools(ctx: CopilotContext) {
     },
   });
 
+  /**
+   * Validates, prices and stores an order awaiting approval. Signs nothing.
+   *
+   * Shared by the model's `place_order` tool and the bot's /buy command so both
+   * paths run identical checks — a command must never be a way around the risk
+   * policy just because no model was involved.
+   */
+  async function prepareOrder(
+    params: PrepareParams,
+  ): Promise<{ ok: true; pending: PendingOrder } | { ok: false; reason: string }> {
+    const { market, side, notionalUsd, limitPrice, intent = 'open' } = params;
+
+    if (!ctx.account) {
+      return { ok: false, reason: 'Read-only mode: no signing key is loaded, so orders cannot be prepared.' };
+    }
+
+    try {
+      const all = await markets();
+      const { market: m } = resolveMarket(market, all);
+
+      assertTradable(m, intent);
+
+      const prices = await ctx.gateway.marketPrices([m.productId]);
+      const book = prices.market_prices?.[0];
+      if (!book) return { ok: false, reason: `${m.symbol} has no book right now.` };
+
+      const bid = BigInt(book.bid_x18);
+      const ask = BigInt(book.ask_x18);
+      const priceX18 =
+        limitPrice !== undefined ? toX18(String(limitPrice)) : side === 'buy' ? ask : bid;
+
+      const notionalX18 = toX18(String(notionalUsd));
+      const account = await fetchAccount(ctx.gateway, sender, all);
+      assertWithinPolicy({ market: m, side, notionalX18, intent }, account, policy);
+
+      const sizeX18 = (notionalX18 * ONE_X18) / priceX18;
+
+      const prepared = buildOrder(ctx.network, {
+        market: m,
+        sender,
+        side,
+        size: fromX18(sizeX18, 8),
+        price: fromX18(priceX18, 8),
+        intent,
+        builderId: ctx.builderId ?? 0,
+        // Isolated markets need margin posted; use the order's own notional
+        // at the policy leverage cap.
+        isolatedMarginX6: m.isolatedOnly
+          ? (notionalX18 * 1_000_000n) / ONE_X18 / BigInt(Math.floor(policy.maxLeverage))
+          : undefined,
+      });
+
+      const amount = prepared.message.amount;
+      const entry: PendingOrder = {
+        token: randomUUID(),
+        prepared,
+        market: m,
+        summary:
+          `${side} ${fromX18(amount < 0n ? -amount : amount, 6)} ${m.symbol} ` +
+          `@ ${fromX18(prepared.message.priceX18, 6)} ` +
+          `(${usd(notionalX18)} notional, ${m.assetClass})`,
+        createdAt: Date.now(),
+      };
+
+      pending.set(entry.token, entry);
+      return { ok: true, pending: entry };
+    } catch (err) {
+      if (err instanceof UnknownMarketError) return { ok: false, reason: err.message };
+      if (err instanceof MarketClosedError) return { ok: false, reason: `Cannot trade: ${err.message}` };
+      if (err instanceof PolicyViolation) {
+        return { ok: false, reason: `Blocked by risk policy (${err.rule}): ${err.message}` };
+      }
+      if (err instanceof NadoApiError) return { ok: false, reason: `Nado rejected this: ${err.message}` };
+      return { ok: false, reason: `Could not prepare the order: ${(err as Error).message}` };
+    }
+  }
+
   const placeOrder = betaZodTool({
     name: 'place_order',
     description:
@@ -163,68 +274,20 @@ export function createTools(ctx: CopilotContext) {
         .optional()
         .describe('"close" reduces an existing position and skips exposure limits.'),
     }),
-    run: async ({ market, side, notionalUsd, limitPrice, intent = 'open' }) => {
-      if (!ctx.account) {
-        return 'Read-only mode: no signing key is loaded, so orders cannot be prepared.';
-      }
+    run: async (params) => {
+      const result = await prepareOrder(params);
+      if (!result.ok) return result.reason;
 
-      try {
-        const all = await markets();
-        const { market: m } = resolveMarket(market, all);
-
-        assertTradable(m, intent);
-
-        const prices = await ctx.gateway.marketPrices([m.productId]);
-        const book = prices.market_prices?.[0];
-        if (!book) return `${m.symbol} has no book right now.`;
-
-        const bid = BigInt(book.bid_x18);
-        const ask = BigInt(book.ask_x18);
-        const priceX18 = limitPrice !== undefined ? toX18(String(limitPrice)) : side === 'buy' ? ask : bid;
-
-        const notionalX18 = toX18(String(notionalUsd));
-        const account = await fetchAccount(ctx.gateway, sender, all);
-        assertWithinPolicy({ market: m, side, notionalX18, intent }, account, policy);
-
-        const sizeX18 = (notionalX18 * ONE_X18) / priceX18;
-
-        const prepared = buildOrder(ctx.network, {
-          market: m,
-          sender,
-          side,
-          size: fromX18(sizeX18, 8),
-          price: fromX18(priceX18, 8),
-          intent,
-          builderId: ctx.builderId ?? 0,
-          // Isolated markets need margin posted; use the order's own notional
-          // at the policy leverage cap.
-          isolatedMarginX6: m.isolatedOnly
-            ? (notionalX18 * 1_000_000n) / ONE_X18 / BigInt(Math.floor(policy.maxLeverage))
-            : undefined,
-        });
-
-        const token = randomUUID();
-        const summary =
-          `${side} ${fromX18(prepared.message.amount < 0n ? -prepared.message.amount : prepared.message.amount, 6)} ` +
-          `${m.symbol} @ ${fromX18(prepared.message.priceX18, 6)} ` +
-          `(${usd(notionalX18)} notional, ${m.assetClass})`;
-
-        pending.set(token, { token, prepared, market: m, summary, createdAt: Date.now() });
-
-        return (
-          `PREPARED, NOT SENT.\n${summary}\n` +
-          `fee to us: ${prepared.builderFeeQuote} USDT0\n` +
-          `confirmation token: ${token}\n` +
-          `Tell the trader exactly what this order is and ask them to confirm. ` +
-          `You cannot confirm it yourself.`
-        );
-      } catch (err) {
-        if (err instanceof UnknownMarketError) return err.message;
-        if (err instanceof MarketClosedError) return `Cannot trade: ${err.message}`;
-        if (err instanceof PolicyViolation) return `Blocked by risk policy (${err.rule}): ${err.message}`;
-        if (err instanceof NadoApiError) return `Nado rejected this: ${err.message}`;
-        return `Could not prepare the order: ${(err as Error).message}`;
-      }
+      // Model-facing. Says what the order is and, explicitly, that the model
+      // is not the one who approves it. The human-readable version lives in
+      // describePending() so this instruction never reaches a user.
+      return (
+        `PREPARED, NOT SENT.\n${result.pending.summary}\n` +
+        `fee to us: ${result.pending.prepared.builderFeeQuote} USDT0\n` +
+        `confirmation token: ${result.pending.token}\n` +
+        `Tell the trader exactly what this order is and ask them to confirm. ` +
+        `You cannot confirm it yourself.`
+      );
     },
   });
 
@@ -255,6 +318,7 @@ export function createTools(ctx: CopilotContext) {
 
   return {
     tools: [getAccount, listMarkets, getPrice, placeOrder],
+    prepareOrder,
     confirmOrder,
     pending,
   };
