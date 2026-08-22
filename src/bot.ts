@@ -22,6 +22,7 @@ import { resolveMarket, UnknownMarketError } from './resolve.ts';
 import { toSubaccountHex } from './subaccount.ts';
 import { TelegramBot, type TelegramMessage } from './telegram.ts';
 import { createTools, describePending } from './tools.ts';
+import { networkBanner } from './config.ts';
 import { fromX18 } from './units.ts';
 
 export interface BotOptions {
@@ -64,7 +65,8 @@ export async function runBot(options: BotOptions): Promise<void> {
 
   const me = await telegram.getMe();
   console.log(`RoboNado live as @${me.username}`);
-  console.log(`network ${network}  wallet ${address}`);
+  console.log(`network ${networkBanner(network)}`);
+  console.log(`wallet  ${address}`);
   console.log(
     allowedUserIds.size
       ? `trading enabled for user ids: ${[...allowedUserIds].join(', ')}`

@@ -11,6 +11,7 @@ import { loadMarkets } from '../src/markets.ts';
 import { fetchAccount } from '../src/positions.ts';
 import { toSubaccountHex } from '../src/subaccount.ts';
 import { fromX18 } from '../src/units.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 
 const address = process.argv[2];
 if (!address) {
@@ -18,7 +19,7 @@ if (!address) {
   process.exit(1);
 }
 
-const NETWORK = 'testnet' as const;
+const NETWORK = resolveNetwork();
 const gateway = new NadoGateway(NETWORK);
 const sender = toSubaccountHex(address, 'default');
 

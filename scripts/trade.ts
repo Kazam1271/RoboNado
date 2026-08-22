@@ -20,8 +20,9 @@ import { buildOrderNonce } from '../src/nonce.ts';
 import { serializeCancellation, signCancellation } from '../src/signing.ts';
 import { toSubaccountHex } from '../src/subaccount.ts';
 import { fromX18 } from '../src/units.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 
-const NETWORK = 'testnet' as const;
+const NETWORK = resolveNetwork();
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);

@@ -18,8 +18,9 @@ import { runBot } from '../src/bot.ts';
 import { NadoGateway } from '../src/gateway.ts';
 import { TelegramBot } from '../src/telegram.ts';
 import { createTools } from '../src/tools.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 
-const NETWORK = 'testnet' as const;
+const NETWORK = resolveNetwork();
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 if (!botToken) {

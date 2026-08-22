@@ -11,6 +11,7 @@ import { NadoApiError, NadoGateway } from '../src/gateway.ts';
 import { loadMarkets, nonCryptoMarkets } from '../src/markets.ts';
 import { toSubaccountHex } from '../src/subaccount.ts';
 import { fromX18 } from '../src/units.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 
 const address = process.argv[2];
 if (!address) {
@@ -18,11 +19,11 @@ if (!address) {
   process.exit(1);
 }
 
-const NETWORK = 'testnet' as const;
+const NETWORK = resolveNetwork();
 const gateway = new NadoGateway(NETWORK);
 const sender = toSubaccountHex(address, 'default');
 
-console.log(`network  ${NETWORK}`);
+console.log(`network  ${networkBanner(NETWORK)}`);
 console.log(`wallet   ${address}`);
 console.log(`sender   ${sender}\n`);
 

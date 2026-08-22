@@ -15,15 +15,16 @@ import { loadMarkets } from '../src/markets.ts';
 import { buildOrder, signPreparedOrder } from '../src/order.ts';
 import { toSubaccountHex } from '../src/subaccount.ts';
 import { fromX18 } from '../src/units.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 
-const NETWORK = 'testnet' as const;
+const NETWORK = resolveNetwork();
 const BUILDER_ID = Number(process.env.ROBONADO_BUILDER_ID ?? 0);
 
 const account = privateKeyToAccount(generatePrivateKey());
 const sender = toSubaccountHex(account.address, 'default');
 
 const markets = await loadMarkets(NETWORK);
-console.log(`network   ${NETWORK} (Ink Sepolia)`);
+console.log(`network   ${networkBanner(NETWORK)}`);
 console.log(`signer    ${account.address}  [ephemeral]`);
 console.log(`sender    ${sender}`);
 console.log(`builder   ${BUILDER_ID === 0 ? '0 — unattributed, no fee charged' : BUILDER_ID}\n`);

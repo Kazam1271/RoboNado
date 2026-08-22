@@ -5,9 +5,12 @@
  */
 
 import { loadMarkets, nonCryptoMarkets } from '../src/markets.ts';
+import { resolveNetwork, networkBanner } from '../src/config.ts';
 import { BUILDER_FEE_BPS, builderFeeBurden } from '../src/guards.ts';
 
-const markets = await loadMarkets('mainnet');
+const NETWORK = resolveNetwork();
+console.log(`${networkBanner(NETWORK)}\n`);
+const markets = await loadMarkets(NETWORK);
 const wedge = nonCryptoMarkets(markets).sort(
   (a, b) => a.assetClass.localeCompare(b.assetClass) || a.symbol.localeCompare(b.symbol),
 );
