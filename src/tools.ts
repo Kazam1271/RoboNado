@@ -19,7 +19,7 @@ import { NadoApiError, NadoGateway } from './gateway.ts';
 import { MarketClosedError, assertTradable } from './guards.ts';
 import { fxSessionNote } from './marketHours.ts';
 import { loadMarkets, type MarketMeta, type Network } from './markets.ts';
-import { buildOrder, signPreparedOrder, type PreparedOrder } from './order.ts';
+import { buildOrder, refreshNonce, signPreparedOrder, type PreparedOrder } from './order.ts';
 import { assertWithinPolicy, DEFAULT_POLICY, PolicyViolation, type RiskPolicy } from './policy.ts';
 import { fetchAccount } from './positions.ts';
 import { resolveMarket, UnknownMarketError } from './resolve.ts';
@@ -318,9 +318,16 @@ export function createTools(ctx: CopilotContext) {
     if (!ctx.account) return 'No signing key loaded.';
 
     try {
-      const payload = await signPreparedOrder(ctx.account, ctx.network, entry.prepared);
+      // The nonce built at prepare time carries a ~20s recv_time window —
+      // a human reading a summary and typing /confirm back routinely takes
+      // longer than that. Rebuild it against now, right before signing, so
+      // the window is measured against actual submission time rather than
+      // however long ago the order was prepared (bounded separately by
+      // PENDING_TTL_MS above).
+      const fresh = refreshNonce(ctx.network, entry.prepared);
+      const payload = await signPreparedOrder(ctx.account, ctx.network, fresh);
       const result = await ctx.gateway.placeOrder(payload);
-      return `Placed. digest ${result.digest ?? entry.prepared.digest}\n${entry.summary}`;
+      return `Placed. digest ${result.digest ?? fresh.digest}\n${entry.summary}`;
     } catch (err) {
       if (err instanceof NadoApiError) return `Rejected: ${err.message}`;
       return `Failed: ${(err as Error).message}`;

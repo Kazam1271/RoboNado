@@ -12,7 +12,7 @@ import type { Account } from 'viem';
 import { buildAppendix, OrderType, type AppendixParams } from './appendix.ts';
 import { assertTradable, builderFeeUnitsFor, type Intent } from './guards.ts';
 import type { MarketMeta, Network } from './markets.ts';
-import { buildOrderNonce } from './nonce.ts';
+import { buildOrderNonce, DEFAULT_RECV_WINDOW_MS } from './nonce.ts';
 import {
   orderDigest,
   serializeOrder,
@@ -145,6 +145,30 @@ function estimateBuilderFee(priceX18: bigint, sizeX18: bigint, rateUnits: number
   const whole = feeX18 / 10n ** 18n;
   const frac = (feeX18 % 10n ** 18n).toString().padStart(18, '0').slice(0, 6);
   return `${whole}.${frac}`;
+}
+
+/**
+ * Rebuilds a prepared order's nonce — and the digest that covers it — against
+ * the current time, leaving price, size, and everything else untouched.
+ *
+ * The nonce's recv_time is a short liveness window (20s by default; see
+ * nonce.ts) bounding how long a *signed* request may sit in flight to the
+ * sequencer. It is not meant to survive the gap between preparing an order
+ * and a human reading the summary and typing a confirmation back — that
+ * routinely takes longer, and PENDING_TTL_MS (5 minutes, in tools.ts) is the
+ * actual policy for how long an approval may wait. Call this immediately
+ * before signing, not when the order was first built, so the recv window is
+ * measured against real submission time rather than however long the order
+ * has been sitting prepared.
+ */
+export function refreshNonce(
+  network: Network,
+  order: PreparedOrder,
+  recvWindowMs: number = DEFAULT_RECV_WINDOW_MS,
+  now: number = Date.now(),
+): PreparedOrder {
+  const message: OrderMessage = { ...order.message, nonce: buildOrderNonce(recvWindowMs, now) };
+  return { ...order, message, digest: orderDigest(network, order.productId, message) };
 }
 
 export async function signPreparedOrder(
