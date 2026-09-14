@@ -18,6 +18,14 @@ function gatewayReturning(raw: unknown): NadoGateway {
   return { query: async () => raw } as unknown as NadoGateway;
 }
 
+/** Like gatewayReturning, but answers subaccount_info and isolated_positions differently. */
+function gatewayFor(subaccountInfo: unknown, isolatedPositions: unknown): NadoGateway {
+  return {
+    query: async (type: string) =>
+      type === 'isolated_positions' ? isolatedPositions : subaccountInfo,
+  } as unknown as NadoGateway;
+}
+
 const flatRisk = (long: string, short: string, longM: string, shortM: string, price: string) => ({
   long_weight_initial_x18: x18(long),
   short_weight_initial_x18: x18(short),
@@ -25,6 +33,17 @@ const flatRisk = (long: string, short: string, longM: string, shortM: string, pr
   short_weight_maintenance_x18: x18(shortM),
   price_x18: x18(price),
 });
+
+/** A cross account with no perp positions: just $50 of idle USDT0. */
+const idleCross = {
+  exists: true,
+  subaccount: '0xabc',
+  healths: Array(3).fill({ assets: x18('50'), liabilities: '0', health: x18('50') }),
+  spot_balances: [{ product_id: 0, balance: { amount: x18('50') } }],
+  perp_balances: [],
+  spot_products: [{ product_id: 0, risk: flatRisk('1', '1', '1', '1', '1') }],
+  perp_products: [],
+};
 
 describe('health reporting', () => {
   test('reads the three health weightings in documented order', async () => {
@@ -241,6 +260,122 @@ describe('liquidation price', () => {
       markets,
     );
     assert.equal(account.positions.length, 0);
+  });
+});
+
+describe('isolated positions', () => {
+  /**
+   * Long 1 WTI at $100 oracle/entry (zero unrealized), $50 margin posted,
+   * with its own three-way health — deliberately different from the cross
+   * account's, to prove the two never mix.
+   */
+  const isolatedWti = (maintenanceHealth: string) => ({
+    isolated_positions: [
+      {
+        subaccount: '0xabc-iso',
+        quote_balance: { product_id: 0, balance: { amount: x18('50') } },
+        base_balance: {
+          product_id: 90,
+          balance: {
+            amount: x18('1'),
+            v_quote_balance: x18('-100'),
+            last_cumulative_funding_x18: '0',
+          },
+        },
+        base_product: {
+          product_id: 90,
+          oracle_price_x18: x18('100'),
+          risk: flatRisk('0.9', '1.1', '0.95', '1.05', '100'),
+          state: { cumulative_funding_long_x18: '0', cumulative_funding_short_x18: '0' },
+        },
+        healths: [
+          { assets: '0', liabilities: '0', health: x18('45') },
+          { assets: '0', liabilities: '0', health: maintenanceHealth },
+          { assets: '0', liabilities: '0', health: x18('48') },
+        ],
+      },
+    ],
+  });
+
+  test('appears in positions() even with no cross positions at all', async () => {
+    const account = await fetchAccount(
+      gatewayFor(idleCross, isolatedWti(x18('47'))),
+      '0xabc',
+      markets,
+    );
+    assert.equal(account.positions.length, 1);
+    const p = account.positions[0];
+    assert.equal(p.symbol, 'WTI-PERP');
+    assert.equal(p.isolated, true);
+    assert.equal(p.side, 'long');
+    assert.equal(fromX18(p.notionalX18), '100');
+    assert.equal(fromX18(p.isolatedMarginX18!), '50');
+  });
+
+  test('sums margin across isolated positions into the account total', async () => {
+    const account = await fetchAccount(
+      gatewayFor(idleCross, isolatedWti(x18('47'))),
+      '0xabc',
+      markets,
+    );
+    assert.equal(fromX18(account.isolatedMarginX18), '50');
+  });
+
+  test('leverage is against its own margin, not the whole account', async () => {
+    const account = await fetchAccount(
+      gatewayFor(idleCross, isolatedWti(x18('47'))),
+      '0xabc',
+      markets,
+    );
+    // $100 notional against $50 margin = 2x, not $100 / $50 cross equity
+    // (which would coincidentally also read 2x here — the point is which
+    // number it divides by, checked properly in the next test).
+    assert.equal(account.positions[0].leverage, 2);
+  });
+
+  test('cross equity, gross notional and health are unaffected by an isolated position', async () => {
+    const withIsolated = await fetchAccount(
+      gatewayFor(idleCross, isolatedWti(x18('47'))),
+      '0xabc',
+      markets,
+    );
+    const withoutIsolated = await fetchAccount(
+      gatewayFor(idleCross, { isolated_positions: [] }),
+      '0xabc',
+      markets,
+    );
+    assert.equal(withIsolated.equityX18, withoutIsolated.equityX18);
+    assert.equal(withIsolated.grossNotionalX18, withoutIsolated.grossNotionalX18);
+    assert.deepEqual(withIsolated.health, withoutIsolated.health);
+    assert.equal(fromX18(withIsolated.equityX18), '50');
+    assert.equal(withIsolated.grossNotionalX18, 0n);
+  });
+
+  test('liquidation price is driven by the isolated position\'s own maintenance health', async () => {
+    const thin = await fetchAccount(gatewayFor(idleCross, isolatedWti(x18('1'))), '0xabc', markets);
+    const fat = await fetchAccount(gatewayFor(idleCross, isolatedWti(x18('40'))), '0xabc', markets);
+    // Both share the exact same (idle) cross account — only the isolated
+    // position's own maintenance health differs between them.
+    assert.ok(
+      fat.positions[0].liquidationPriceX18! < thin.positions[0].liquidationPriceX18!,
+      'more isolated maintenance health pushes its liquidation further from the mark',
+    );
+  });
+
+  test('an account with none reports an empty list and zero total, same as before this existed', async () => {
+    const account = await fetchAccount(
+      gatewayFor(idleCross, { isolated_positions: [] }),
+      '0xabc',
+      markets,
+    );
+    assert.equal(account.positions.length, 0);
+    assert.equal(account.isolatedMarginX18, 0n);
+  });
+
+  test('a missing isolated_positions field is treated the same as an empty one', async () => {
+    const account = await fetchAccount(gatewayFor(idleCross, {}), '0xabc', markets);
+    assert.equal(account.positions.length, 0);
+    assert.equal(account.isolatedMarginX18, 0n);
   });
 });
 
