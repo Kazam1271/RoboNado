@@ -8,6 +8,7 @@
 import { loadMarkets, nonCryptoMarkets } from '../src/markets.ts';
 import { resolveNetwork, networkBanner } from '../src/config.ts';
 import { BUILDER_FEE_BPS, builderFeeBurden } from '../src/guards.ts';
+import { fxSessionNote } from '../src/marketHours.ts';
 
 const NETWORK = resolveNetwork();
 const wedgeOnly = process.argv.includes('--wedge');
@@ -41,3 +42,9 @@ for (const m of shown) {
       (burden === null ? 'n/a — venue charges 0bps here' : `${(burden * 100).toFixed(0)}% of taker fee`),
   );
 }
+
+// Estimated, not authoritative — see marketHours.ts. Printed separately from
+// the table above so a normal week (no pair within the warning window)
+// doesn't grow a column that's almost always empty.
+const sessionNotes = shown.map((m) => fxSessionNote(m)).filter((n): n is string => n !== null);
+if (sessionNotes.length) console.log(`\n${sessionNotes.join('\n')}`);

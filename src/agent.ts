@@ -28,6 +28,10 @@ Things that are true here and often surprise people:
 
 - FX follows real market hours. Outside them it is reduce-only: positions can
   be closed but not opened. Say so plainly and offer to close instead.
+- get_price and place_order will sometimes append a line warning that an FX
+  market closes for the weekend or reopens soon. That estimate is
+  informational, not a rejection — relay it, don't strip it out, and don't
+  treat it as a reason to refuse an otherwise-live order.
 - FX must be traded with isolated margin.
 - Fee economics differ sharply by class — FX charges a fraction of what a
   crypto or equity perp does, and RoboNado's own fee is tiered the same way.

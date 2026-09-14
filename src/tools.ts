@@ -17,6 +17,7 @@ import type { Account } from 'viem';
 
 import { NadoApiError, NadoGateway } from './gateway.ts';
 import { MarketClosedError, assertTradable } from './guards.ts';
+import { fxSessionNote } from './marketHours.ts';
 import { loadMarkets, type MarketMeta, type Network } from './markets.ts';
 import { buildOrder, signPreparedOrder, type PreparedOrder } from './order.ts';
 import { assertWithinPolicy, DEFAULT_POLICY, PolicyViolation, type RiskPolicy } from './policy.ts';
@@ -143,7 +144,13 @@ export function createTools(ctx: CopilotContext) {
       );
       if (!all.length) return 'no markets match';
       return all
-        .map((m) => `${m.symbol} (${m.assetClass}) ${m.tradingStatus}${m.isolatedOnly ? ' isolated-only' : ''}`)
+        .map((m) => {
+          const note = fxSessionNote(m);
+          return (
+            `${m.symbol} (${m.assetClass}) ${m.tradingStatus}${m.isolatedOnly ? ' isolated-only' : ''}` +
+            (note ? ` — ${note}` : '')
+          );
+        })
         .join('\n');
     },
   });
@@ -162,9 +169,11 @@ export function createTools(ctx: CopilotContext) {
         const prices = await ctx.gateway.marketPrices([m.productId]);
         const book = prices.market_prices?.[0];
         if (!book) return `${m.symbol}: no book`;
+        const note = fxSessionNote(m);
         return (
           `${m.symbol} (matched by ${via}, ${m.tradingStatus}) ` +
-          `bid ${fromX18(BigInt(book.bid_x18), 6)} ask ${fromX18(BigInt(book.ask_x18), 6)}`
+          `bid ${fromX18(BigInt(book.bid_x18), 6)} ask ${fromX18(BigInt(book.ask_x18), 6)}` +
+          (note ? `\n${note}` : '')
         );
       } catch (err) {
         if (err instanceof UnknownMarketError) return err.message;
@@ -226,6 +235,7 @@ export function createTools(ctx: CopilotContext) {
       });
 
       const amount = prepared.message.amount;
+      const note = fxSessionNote(m);
       const entry: PendingOrder = {
         token: randomUUID(),
         prepared,
@@ -233,7 +243,8 @@ export function createTools(ctx: CopilotContext) {
         summary:
           `${side} ${fromX18(amount < 0n ? -amount : amount, 6)} ${m.symbol} ` +
           `@ ${fromX18(prepared.message.priceX18, 6)} ` +
-          `(${usd(notionalX18)} notional, ${m.assetClass})`,
+          `(${usd(notionalX18)} notional, ${m.assetClass})` +
+          (note ? `\n${note}` : ''),
         createdAt: Date.now(),
       };
 
