@@ -8,10 +8,11 @@ and single-name equities — on Nado's unified spot/perp/margin CLOB on Ink L2,
 through plain-language instructions. Not another BTC perp bot with a chat box
 on top, and not a bot that stops at the tickers everyone else already covers.
 
-> **Status: pre-alpha.** The order construction and EIP-712 signing layer,
-> gateway client, position/health queries, intent layer, and Telegram
-> interface are complete and tested. No orders have been placed against a
-> live book yet. See [Roadmap](#roadmap).
+> **Status: pre-alpha.** Every layer — order construction, EIP-712 signing,
+> the gateway client, position/health queries, the intent layer, and the
+> Telegram interface — is built and tested, and a real order has been placed,
+> read back, and cancelled against a live testnet book. Not yet run
+> unsupervised or on mainnet. See [Roadmap](#roadmap).
 
 ---
 
@@ -169,8 +170,8 @@ through `units.ts` on strings, and `bigint` from there down.
 - [x] Natural-language intent layer
 - [x] Telegram interface
 - [x] Universal coverage — every asset class tradable by default, not just the non-crypto planes
+- [x] A first live order placed, read back, and cancelled against a resting testnet book
 - [ ] Market-hours pre-open warnings ahead of the weekly FX open, not just the closed-market guard
-- [ ] A first live order placed against a resting book
 
 ## Builder codes
 
