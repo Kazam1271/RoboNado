@@ -95,8 +95,12 @@ export function builderFeeUnitsFor(market: MarketMeta): number {
  * What the builder fee costs the user relative to Nado's own taker fee, as a
  * ratio. Useful as a sanity check when tuning {@link BUILDER_FEE_BPS}: anything
  * much above ~0.3 means we are a material part of the user's cost to trade.
+ *
+ * Null when the venue's own taker fee is zero — a handful of promotional
+ * listings charge nothing, and "our fee ÷ 0" is not a burden ratio.
  */
-export function builderFeeBurden(market: MarketMeta): number {
+export function builderFeeBurden(market: MarketMeta): number | null {
   const takerBps = Number(market.takerFeeRateX18) / 1e18 * 10_000;
+  if (takerBps === 0) return null;
   return BUILDER_FEE_BPS[market.assetClass] / takerBps;
 }

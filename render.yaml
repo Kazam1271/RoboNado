@@ -32,6 +32,12 @@ services:
       - key: ROBONADO_BUILDER_ID
         value: "0"
 
+      # Unset trades every asset class Nado lists (crypto, commodity, fx,
+      # equity). Uncomment and narrow if this deployment should have a
+      # smaller mandate, e.g. "commodity,fx,equity" to exclude crypto.
+      # - key: ROBONADO_ASSET_CLASSES
+      #   value: "commodity,fx,equity"
+
       # --- set these in the Render dashboard, never here ---
 
       # From @BotFather. Anyone holding it controls the bot.

@@ -29,8 +29,11 @@ console.log(`signer    ${account.address}  [ephemeral]`);
 console.log(`sender    ${sender}`);
 console.log(`builder   ${BUILDER_ID === 0 ? '0 — unattributed, no fee charged' : BUILDER_ID}\n`);
 
-// Sizes clear each market's min_size (100 units across these listings).
+// Sizes clear each market's min_size ($100 notional across these listings).
+// BTC-PERP is here to show the same builder handles crypto and non-crypto
+// alike — it needs none of the guards the other three do.
 const attempts = [
+  { symbol: 'BTC-PERP', side: 'buy' as const, size: '0.01', price: '65000.00' },
   { symbol: 'WTI-PERP', side: 'buy' as const, size: '100', price: '58.00' },
   { symbol: 'XAG-PERP', side: 'sell' as const, size: '150.037', price: '52.00' },
   { symbol: 'EURUSD-PERP', side: 'buy' as const, size: '1000', price: '1.0850' },

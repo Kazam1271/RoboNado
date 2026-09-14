@@ -1,9 +1,13 @@
 /**
- * Registry of Nado's non-crypto asset planes.
+ * Registry of every asset class Nado lists.
  *
- * This is the wedge: ~40% of Nado's perp listings are commodities, FX, or
- * equities. Crypto-native bots ignore these markets entirely, and they behave
- * differently enough that treating them like BTC-PERP produces broken orders.
+ * RoboNado trades the whole venue — crypto perps alongside commodities, FX,
+ * and equities — but those four planes do not behave alike. ~40% of Nado's
+ * perp listings are non-crypto, and treating a commodity or an FX pair like
+ * BTC-PERP produces broken orders: FX closes on real market hours, three
+ * pairs are isolated-margin only, and fee economics differ by class. This
+ * classification is what lets guards.ts and policy.ts apply the right rule
+ * to the right market instead of one rule to everything.
  */
 
 export type AssetClass = 'commodity' | 'fx' | 'equity' | 'crypto';

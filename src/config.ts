@@ -6,9 +6,43 @@
  * so anything unrecognised is an error rather than a fallback.
  */
 
-import type { Network } from './markets.ts';
+import type { AssetClass, Network } from './markets.ts';
+import { DEFAULT_POLICY, type RiskPolicy } from './policy.ts';
 
 export const DEFAULT_NETWORK: Network = 'testnet';
+
+const KNOWN_ASSET_CLASSES: readonly AssetClass[] = ['crypto', 'commodity', 'fx', 'equity'];
+
+export class AssetClassConfigError extends Error {
+  constructor(value: string, bad: string[]) {
+    super(
+      `ROBONADO_ASSET_CLASSES is "${value}" — unrecognised: ${bad.join(', ')}. ` +
+        `Expected a comma-separated list from: ${KNOWN_ASSET_CLASSES.join(', ')}.`,
+    );
+    this.name = 'AssetClassConfigError';
+  }
+}
+
+/**
+ * Reads ROBONADO_ASSET_CLASSES and returns a policy narrowed to it, or
+ * {@link DEFAULT_POLICY} unchanged when unset — which trades every asset
+ * class Nado lists. An operator who wants a narrower mandate (crypto
+ * excluded, say) sets this rather than editing policy.ts, mirroring how
+ * {@link resolveNetwork} keeps the network choice out of code too.
+ */
+export function resolveAssetClasses(
+  env: NodeJS.ProcessEnv = process.env,
+  basePolicy: RiskPolicy = DEFAULT_POLICY,
+): RiskPolicy {
+  const raw = (env.ROBONADO_ASSET_CLASSES ?? '').trim();
+  if (!raw) return basePolicy;
+
+  const requested = raw.split(',').map((s) => s.trim().toLowerCase());
+  const bad = requested.filter((c) => !KNOWN_ASSET_CLASSES.includes(c as AssetClass));
+  if (bad.length) throw new AssetClassConfigError(raw, bad);
+
+  return { ...basePolicy, allowedAssetClasses: requested };
+}
 
 export class NetworkConfigError extends Error {
   constructor(value: string) {

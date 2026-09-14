@@ -21,20 +21,24 @@ export interface RiskPolicy {
   maxLeverage: number;
   /** Refuse to open when initial health would fall below this fraction of equity. */
   minFreeCollateralRatio: number;
-  /** Markets the copilot may trade. Empty means the non-crypto planes only. */
+  /** Markets the copilot may trade. Empty means nothing is tradable. */
   allowedAssetClasses: string[];
 }
 
 /**
  * Deliberately conservative. These are the limits for an agent trading
  * unsupervised on someone's behalf, not the limits of what the venue permits.
+ *
+ * All four asset classes are enabled — RoboNado is a copilot for the whole
+ * venue, not a subset of it. An operator who wants a narrower mandate (crypto
+ * excluded, say) sets `ROBONADO_ASSET_CLASSES` rather than editing this file.
  */
 export const DEFAULT_POLICY: RiskPolicy = {
   maxOrderNotionalX18: 500n * ONE_X18,
   maxGrossNotionalX18: 2_000n * ONE_X18,
   maxLeverage: 3,
   minFreeCollateralRatio: 0.2,
-  allowedAssetClasses: ['commodity', 'fx', 'equity'],
+  allowedAssetClasses: ['commodity', 'fx', 'equity', 'crypto'],
 };
 
 export class PolicyViolation extends Error {

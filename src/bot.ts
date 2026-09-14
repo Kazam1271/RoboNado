@@ -40,10 +40,10 @@ export interface BotOptions {
   policy?: RiskPolicy;
 }
 
-const HELP = `RoboNado — commodities, FX and equities on Nado
+const HELP = `RoboNado — every market on Nado, one copilot
 
 /account            your equity, health and open positions
-/markets [class]    what is tradable and whether it is open
+/markets [class]    what is tradable and whether it is open (crypto, commodity, fx, equity)
 /price <market>     live bid and ask
 /buy <usd> <market>   prepare a buy, e.g. /buy 120 gold
 /sell <usd> <market>  prepare a sell
@@ -51,8 +51,9 @@ const HELP = `RoboNado — commodities, FX and equities on Nado
 /limits             the risk limits in force
 /help               this message
 
-Markets take plain names: gold, silver, oil, euro, cable, tesla, nvidia,
-the S&P. FX follows real market hours and is reduce-only when closed.
+Markets take plain names: bitcoin, solana, gold, silver, oil, euro, cable,
+tesla, nvidia, the S&P. FX follows real market hours and is reduce-only when
+closed.
 
 Orders are never sent without /confirm.`;
 

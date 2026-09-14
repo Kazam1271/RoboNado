@@ -1,36 +1,49 @@
 # RoboNado
 
-**An AI trading copilot for the markets other Nado bots ignore.**
+**An AI trading copilot for every market on [Nado](https://nado.xyz) — one
+account, one conversation.**
 
-RoboNado trades commodities, FX, and equities on [Nado](https://nado.xyz) — the
-unified spot/perp/margin CLOB on Ink L2 — through plain-language instructions.
-Not another BTC perp bot with a chat box on top.
+RoboNado trades all of it — BTC and ETH perps alongside commodities, FX, index
+and single-name equities — on Nado's unified spot/perp/margin CLOB on Ink L2,
+through plain-language instructions. Not another BTC perp bot with a chat box
+on top, and not a bot that stops at the tickers everyone else already covers.
 
-> **Status: pre-alpha.** The order construction and EIP-712 signing layer is
-> complete and tested. No orders have been placed against a live book yet. See
-> [Roadmap](#roadmap).
+> **Status: pre-alpha.** The order construction and EIP-712 signing layer,
+> gateway client, position/health queries, intent layer, and Telegram
+> interface are complete and tested. No orders have been placed against a
+> live book yet. See [Roadmap](#roadmap).
 
 ---
 
-## Why these markets
+## Universal coverage, correctly handled
 
-Nado lists **29 non-crypto perpetuals — 39% of its perp book**:
+Run `npm run markets` for the live count, but as of writing Nado lists **82
+perpetuals**, and **29 of them — about 35% — are not crypto**:
 
 | Class | Markets |
 | --- | --- |
+| Crypto | BTC, ETH, SOL, XRP, DOGE, and 50+ more |
 | Commodities | Crude oil (WTI), Silver (XAG), Gold (XAUT) |
 | FX | EUR/USD, GBP/USD, USD/JPY |
 | Indices | S&P 500 (SPY), Nasdaq 100 (QQQ) |
 | Equities | NVDA, TSLA, AAPL, MSFT, META, GOOGL, AMZN, AMD, AVGO, MSTR, SpaceX, Circle, and more |
 
-Every trading bot in the ecosystem points at BTC and ETH. Meanwhile a trader who
-wants to short oil, hedge with silver, and hold TSLA exposure in the same margin
-account has no tooling at all — despite Nado's unified margin engine being the
-only place that portfolio can exist as *one* account.
+RoboNado trades every one of them from one conversation. That matters because
+Nado's margin engine is unified — a trader who wants to short oil, hedge with
+silver, and hold TSLA and SOL exposure in the same account needs one bot that
+understands the whole account, not four single-purpose ones that each see
+their own slice of it.
 
-That is the gap RoboNado fills.
+Most trading bots in the ecosystem stop at BTC and ETH, because the other 29
+markets don't play by crypto's rules — get those wrong and orders fail
+silently or cost more than they should. RoboNado handles both halves
+correctly, in the same copilot.
 
-## Why these markets need different code
+By default every asset class is tradable; an operator who wants a narrower
+mandate sets `ROBONADO_ASSET_CLASSES` (see [.env.example](.env.example)) — to
+`commodity,fx,equity`, say, to run a crypto-free deployment.
+
+## Why the non-crypto planes need different code
 
 Non-crypto markets are not crypto markets with different tickers. Three
 differences break any bot that assumes otherwise:
@@ -54,8 +67,10 @@ RoboNado tiers its builder fee by asset class so the burden stays near-constant:
 | FX | 0.2bps | 29% |
 | Commodity | 1bps | 29% |
 | Equity | 1bps | 29% |
+| Crypto | 1bps | 29% |
 
-Run `npm run markets` to see this computed against live mainnet data.
+Run `npm run markets` to see this computed against live data across every
+listing, or `npm run markets -- --wedge` to see just the non-crypto planes.
 
 ---
 
@@ -66,14 +81,21 @@ no build step).
 
 ```bash
 npm install
-npm test          # 33 tests
-npm run markets   # live non-crypto surface, status, fee burden
+npm test          # 72 tests
+npm run markets   # live trading surface across every asset class, status, fee burden
 npm run dry-run   # build + sign real orders against Ink Sepolia, send nothing
 ```
 
 `dry-run` generates a throwaway key each run and submits nothing. Sample output:
 
 ```
+── BTC-PERP  (crypto, id 2, live)
+   buy 0.01 @ 65000
+   appendix   1
+              isolated=false builderId=0 fee=0bps (policy 1bps)
+   digest     0x6b416fcbe9e919407b2eb7b569f9b59d6743ed3afef38a8f3f5dca1dfaf9cde7
+   our fee    0 USDT0 on this order
+
 ── WTI-PERP  (commodity, id 90, live)
    buy 100 @ 58
    appendix   3689348814753735021000917249
@@ -99,14 +121,22 @@ Orders need a funded subaccount. On testnet both inputs are free:
 
 | Module | Responsibility |
 | --- | --- |
-| `src/markets.ts` | Live market registry; classifies the non-crypto planes |
+| `src/markets.ts` | Live registry of every Nado market; classifies each into crypto, commodity, fx or equity |
 | `src/guards.ts` | Trading-status guard, isolated-margin check, fee policy |
+| `src/policy.ts` | Risk limits enforced in code — order size, exposure, leverage, allowed asset classes |
+| `src/resolve.ts` | Plain-name → symbol resolution ("gold", "bitcoin", "cable") across every class |
 | `src/appendix.ts` | The bit-packed 128-bit order appendix, including builder code |
 | `src/signing.ts` | EIP-712 domains, per-product verifying contract, digest, signer |
 | `src/subaccount.ts` | bytes32 sender encoding |
 | `src/nonce.ts` | 44-bit recv-time / 20-bit random nonce packing |
 | `src/units.ts` | x18 fixed-point, increment rounding, side-from-sign |
 | `src/order.ts` | Composes the above into a validated, signed order |
+| `src/gateway.ts` | REST client — queries, order placement, cancellation |
+| `src/positions.ts` | Reads positions and health off the unified margin account |
+| `src/tools.ts` | The model's tool surface; `place_order` prepares but never signs |
+| `src/agent.ts` | The Claude-driven copilot loop and system prompt |
+| `src/bot.ts` / `src/telegram.ts` | Telegram front end — slash commands plus free-text chat |
+| `src/config.ts` | Env-driven network and asset-class selection, never a silent default toward mainnet |
 
 ### Three decisions worth explaining
 
@@ -134,11 +164,13 @@ through `units.ts` on strings, and `bigint` from there down.
 - [x] Market registry, asset-class classification, fee policy
 - [x] Order appendix encoding with builder codes
 - [x] EIP-712 signing, subaccount encoding, nonce packing
-- [ ] Gateway REST/WS client — place, cancel, and read back a resting order
-- [ ] Position and health queries across the unified margin account
-- [ ] Natural-language intent layer
-- [ ] Market-hours awareness: pre-open warnings, weekly FX open/close
-- [ ] Telegram interface
+- [x] Gateway REST client — place, cancel, and read back a resting order
+- [x] Position and health queries across the unified margin account
+- [x] Natural-language intent layer
+- [x] Telegram interface
+- [x] Universal coverage — every asset class tradable by default, not just the non-crypto planes
+- [ ] Market-hours pre-open warnings ahead of the weekly FX open, not just the closed-market guard
+- [ ] A first live order placed against a resting book
 
 ## Builder codes
 

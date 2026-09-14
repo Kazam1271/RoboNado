@@ -10,11 +10,36 @@
 import type { MarketMeta } from './markets.ts';
 
 /**
- * Aliases for the non-crypto planes. Deliberately hand-written: no fuzzy
- * matcher should be allowed to decide that "peng" means Pudgy Penguins
- * (PENGU-PERP, crypto) rather than Penguin Solutions (PENG-PERP, an equity).
+ * Aliases across every asset class Nado lists. Deliberately hand-written: no
+ * fuzzy matcher should be allowed to decide that "peng" means Pudgy Penguins
+ * (PENGU-PERP, crypto) rather than Penguin Solutions (PENG-PERP, an equity) —
+ * the same discipline that keeps a plain crypto name off the wrong listing.
  */
 const ALIASES: Record<string, string> = {
+  // Crypto — plain names for the majors; a bare ticker like "SOL" or "DOGE"
+  // already resolves via the ticker fallback below, so only names that
+  // differ from the ticker need an entry here.
+  bitcoin: 'BTC-PERP',
+  ether: 'ETH-PERP',
+  ethereum: 'ETH-PERP',
+  solana: 'SOL-PERP',
+  ripple: 'XRP-PERP',
+  dogecoin: 'DOGE-PERP',
+  litecoin: 'LTC-PERP',
+  monero: 'XMR-PERP',
+  zcash: 'ZEC-PERP',
+  avalanche: 'AVAX-PERP',
+  cardano: 'ADA-PERP',
+  chainlink: 'LINK-PERP',
+  uniswap: 'UNI-PERP',
+  aave: 'AAVE-PERP',
+  arbitrum: 'ARB-PERP',
+  hyperliquid: 'HYPE-PERP',
+  toncoin: 'TON-PERP',
+  worldcoin: 'WLD-PERP',
+  'bitcoin cash': 'BCH-PERP',
+  'pudgy penguins': 'PENGU-PERP',
+
   // Commodities
   gold: 'XAUT-PERP',
   xau: 'XAUT-PERP',
