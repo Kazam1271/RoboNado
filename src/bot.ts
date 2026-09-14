@@ -162,13 +162,16 @@ export async function runBot(options: BotOptions): Promise<void> {
           `free collateral ${usd(account.health.initial)}`,
           `liquidation buffer ${usd(account.health.maintenance)}`,
         ];
+        if (account.isolatedMarginX18 > 0n) {
+          lines.push(`+ ${usd(account.isolatedMarginX18)} locked in isolated positions below`);
+        }
         if (!account.positions.length) lines.push('\nno open positions');
         else {
           lines.push('');
           for (const p of account.positions) {
             const pnl = p.unrealizedPnlX18;
             lines.push(
-              `${p.symbol} ${p.side} — ${usd(p.notionalX18)}, ` +
+              `${p.symbol} ${p.side}${p.isolated ? ' (isolated)' : ''} — ${usd(p.notionalX18)}, ` +
                 `${pnl < 0n ? '-' : '+'}${usd(pnl < 0n ? -pnl : pnl)}, ` +
                 `liq ${p.liquidationPriceX18 === null ? 'n/a' : fromX18(p.liquidationPriceX18, 4)}`,
             );

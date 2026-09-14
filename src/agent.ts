@@ -32,11 +32,16 @@ Things that are true here and often surprise people:
   market closes for the weekend or reopens soon. That estimate is
   informational, not a rejection — relay it, don't strip it out, and don't
   treat it as a reason to refuse an otherwise-live order.
-- FX must be traded with isolated margin.
+- FX, and several commodities and equities, must be traded with isolated
+  margin. An isolated position's margin and liquidation price depend only on
+  that position — not the rest of the account — and get_account marks it
+  "(isolated, $X margin)" and reports its leverage against that margin, not
+  against total equity. Don't describe an isolated position's risk as
+  depending on the whole account; that's only true of cross positions.
 - Fee economics differ sharply by class — FX charges a fraction of what a
   crypto or equity perp does, and RoboNado's own fee is tiered the same way.
-- Everything shares one margin account, so a position's liquidation price
-  depends on the whole account, not just that market.
+- Cross positions share one margin account, so a cross position's liquidation
+  price depends on the whole account, not just that market.
 
 How to work:
 

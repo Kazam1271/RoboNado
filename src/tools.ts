@@ -105,18 +105,26 @@ export function createTools(ctx: CopilotContext) {
         return 'This wallet has no Nado subaccount yet. It needs a deposit of at least $5 USDT0.';
       }
       const lines = [
-        `equity ${usd(account.equityX18)}`,
+        `equity ${usd(account.equityX18)} (cross subaccount only)`,
         `free collateral ${usd(account.health.initial)}`,
         `liquidation buffer ${usd(account.health.maintenance)}`,
-        `gross notional ${usd(account.grossNotionalX18)}`,
+        `gross notional ${usd(account.grossNotionalX18)} (cross positions only)`,
       ];
+      if (account.isolatedMarginX18 > 0n) {
+        lines.push(
+          `+ ${usd(account.isolatedMarginX18)} posted as margin in isolated positions — real ` +
+            `money the trader owns, listed below, but not part of the equity/gross notional above`,
+        );
+      }
       if (!account.positions.length) {
         lines.push('no open positions');
       } else {
         for (const p of account.positions) {
           lines.push(
-            `${p.symbol} ${p.side} ${fromX18(p.amount, 4)} | entry ${fromX18(p.entryPriceX18, 4)} ` +
+            `${p.symbol} ${p.side}${p.isolated ? ` (isolated, ${usd(p.isolatedMarginX18!)} margin)` : ''} ` +
+              `${fromX18(p.amount, 4)} | entry ${fromX18(p.entryPriceX18, 4)} ` +
               `| mark ${fromX18(p.oraclePriceX18, 4)} | notional ${usd(p.notionalX18)} ` +
+              `| leverage ${p.leverage.toFixed(1)}x of ${p.isolated ? 'its own margin' : 'equity'} ` +
               `| unrealized ${p.unrealizedPnlX18 < 0n ? '-' : '+'}${usd(p.unrealizedPnlX18 < 0n ? -p.unrealizedPnlX18 : p.unrealizedPnlX18)} ` +
               `| liquidation ${p.liquidationPriceX18 === null ? 'n/a' : fromX18(p.liquidationPriceX18, 4)}`,
           );

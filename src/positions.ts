@@ -49,14 +49,27 @@ export interface Position {
   unrealizedPnlX18: bigint;
   /** Unsettled funding since this position last settled. Estimate. */
   fundingX18: bigint;
-  /** Position notional as a multiple of total account value. */
+  /**
+   * Position notional as a multiple of the capital backing it — the whole
+   * account for a cross position, just {@link isolatedMarginX18} for an
+   * isolated one.
+   */
   leverage: number;
   /**
-   * Oracle price at which maintenance health reaches zero, holding the rest of
-   * the account constant. Null when an adverse move in this market alone
-   * cannot liquidate the account.
+   * Oracle price at which this position's own maintenance health reaches
+   * zero. For a cross position that means the rest of the account held
+   * constant; an isolated position's health is already self-contained. Null
+   * when an adverse move in this market alone cannot liquidate it.
    */
   liquidationPriceX18: bigint | null;
+  /** True for an isolated-margin position; false for a cross position. */
+  isolated: boolean;
+  /**
+   * Margin posted to this position's own isolated subaccount, x18. Null for
+   * a cross position, which draws margin from the whole account rather than
+   * a dedicated amount.
+   */
+  isolatedMarginX18: bigint | null;
 }
 
 export interface SpotBalance {
@@ -69,15 +82,28 @@ export interface SpotBalance {
 export interface AccountSnapshot {
   exists: boolean;
   sender: string;
+  /** The cross subaccount's health — unaffected by isolated positions. */
   health: Health;
   spot: SpotBalance[];
+  /** Cross and isolated positions together, each tagged via `isolated`. */
   positions: Position[];
-  /** Total unweighted account value. */
+  /** Total unweighted value of the cross subaccount only. */
   equityX18: bigint;
-  /** Sum of absolute position notionals. */
+  /** Sum of absolute notionals across cross positions only. */
   grossNotionalX18: bigint;
-  /** Fraction of account value consumed as margin. 0 = idle. */
+  /** Fraction of cross account value consumed as margin. 0 = idle. */
   marginUtilisation: number;
+  /**
+   * Total margin currently posted across every isolated position, x18. Real
+   * money the trader owns, but walled off: it is not part of `equityX18`
+   * above, cannot back a cross position or a different isolated one, and — by
+   * the same token — isolated exposure is not reflected in `grossNotionalX18`
+   * or checked against policy.ts's exposure limits. That is a known gap, not
+   * an oversight of this field; folding isolated and cross scopes into one
+   * number without care produces a badly wrong ratio (verified while fixing
+   * the bug this field exists to close — see the isolated-positions tests).
+   */
+  isolatedMarginX18: bigint;
 }
 
 interface RawRisk {
@@ -110,12 +136,70 @@ interface RawSubaccount {
   }[];
 }
 
+/**
+ * An isolated position is self-contained: unlike `RawSubaccount`'s
+ * `perp_balances` + `perp_products`, everything needed to price and
+ * liquidation-check it — oracle, risk weights, and its own three-way
+ * `healths` — travels with the position itself rather than living in a
+ * shared products table.
+ */
+interface RawIsolatedPosition {
+  subaccount: string;
+  quote_balance: { product_id: number; balance: { amount: string } };
+  base_balance: {
+    product_id: number;
+    balance: {
+      amount: string;
+      v_quote_balance: string;
+      last_cumulative_funding_x18: string;
+    };
+  };
+  base_product: {
+    product_id: number;
+    oracle_price_x18: string;
+    risk: RawRisk;
+    state: { cumulative_funding_long_x18: string; cumulative_funding_short_x18: string };
+  };
+  healths: { assets: string; liabilities: string; health: string }[];
+}
+
+/**
+ * The arithmetic a position needs regardless of whether it is cross or
+ * isolated: side, entry price, mark-to-market and unsettled funding all
+ * follow from amount, the quote leg, and the oracle alone.
+ */
+function derivePositionMath(
+  amount: bigint,
+  vQuote: bigint,
+  oracle: bigint,
+  cumulativeNow: bigint,
+  cumulativeLast: bigint,
+) {
+  const long = amount > 0n;
+  const absAmount = long ? amount : -amount;
+  const notional = mulX18(absAmount, oracle);
+  // v_quote is the quote paid (long) or received (short) to open, so entry
+  // price is its magnitude per unit of size.
+  const entry = absAmount === 0n ? 0n : divX18(vQuote < 0n ? -vQuote : vQuote, absAmount);
+  // Mark to market: current value of the size plus the quote leg.
+  const unrealized = mulX18(amount, oracle) + vQuote;
+  const funding = -mulX18(amount, cumulativeNow - cumulativeLast);
+  return { long, absAmount, notional, entry, unrealized, funding };
+}
+
 export async function fetchAccount(
   gateway: NadoGateway,
   sender: string,
   markets: Map<string, MarketMeta>,
 ): Promise<AccountSnapshot> {
-  const raw = await gateway.query<RawSubaccount>('subaccount_info', { subaccount: sender });
+  // Independent reads — an account with no isolated positions still needs
+  // the second query to confirm that, not skip it.
+  const [raw, isolatedRaw] = await Promise.all([
+    gateway.query<RawSubaccount>('subaccount_info', { subaccount: sender }),
+    gateway.query<{ isolated_positions?: RawIsolatedPosition[] }>('isolated_positions', {
+      subaccount: sender,
+    }),
+  ]);
 
   const symbolByProduct = new Map<number, string>();
   for (const m of markets.values()) symbolByProduct.set(m.productId, m.symbol);
@@ -167,26 +251,20 @@ export async function fetchAccount(
 
     const oracle = BigInt(product.oracle_price_x18);
     const vQuote = BigInt(b.balance.v_quote_balance);
-    const long = amount > 0n;
-    const absAmount = long ? amount : -amount;
-
-    const notional = mulX18(absAmount, oracle);
-    grossNotional += notional;
-
-    // v_quote is the quote paid (long) or received (short) to open, so entry
-    // price is its magnitude per unit of size.
-    const entry = absAmount === 0n ? 0n : divX18(vQuote < 0n ? -vQuote : vQuote, absAmount);
-
-    // Mark to market: current value of the size plus the quote leg.
-    const unrealized = mulX18(amount, oracle) + vQuote;
-
     const cumulativeNow = BigInt(
-      long
+      amount > 0n
         ? product.state.cumulative_funding_long_x18
         : product.state.cumulative_funding_short_x18,
     );
     const cumulativeLast = BigInt(b.balance.last_cumulative_funding_x18);
-    const funding = -mulX18(amount, cumulativeNow - cumulativeLast);
+    const { long, notional, entry, unrealized, funding } = derivePositionMath(
+      amount,
+      vQuote,
+      oracle,
+      cumulativeNow,
+      cumulativeLast,
+    );
+    grossNotional += notional;
 
     const maintenanceWeight = BigInt(
       long
@@ -205,6 +283,7 @@ export async function fetchAccount(
       notionalX18: notional,
       unrealizedPnlX18: unrealized,
       fundingX18: funding,
+      // Cross positions share the whole account as their margin.
       leverage: health.pnl === 0n ? 0 : Number(notional) / Number(health.pnl),
       liquidationPriceX18: liquidationPrice(
         amount,
@@ -213,6 +292,70 @@ export async function fetchAccount(
         health.maintenance,
         oracle,
       ),
+      isolated: false,
+      isolatedMarginX18: null,
+    });
+  }
+
+  // Isolated positions are invisible to subaccount_info entirely — a
+  // trader holding one would otherwise see "no open positions" while real
+  // margin sits locked against a real position. Each carries its own
+  // self-contained oracle, risk weights and three-way health, so none of
+  // this touches the cross health computed above.
+  let isolatedMarginTotal = 0n;
+  for (const pos of isolatedRaw.isolated_positions ?? []) {
+    const amount = BigInt(pos.base_balance.balance.amount);
+    if (amount === 0n) continue;
+
+    const oracle = BigInt(pos.base_product.oracle_price_x18);
+    const vQuote = BigInt(pos.base_balance.balance.v_quote_balance);
+    const cumulativeNow = BigInt(
+      amount > 0n
+        ? pos.base_product.state.cumulative_funding_long_x18
+        : pos.base_product.state.cumulative_funding_short_x18,
+    );
+    const cumulativeLast = BigInt(pos.base_balance.balance.last_cumulative_funding_x18);
+    const { long, notional, entry, unrealized, funding } = derivePositionMath(
+      amount,
+      vQuote,
+      oracle,
+      cumulativeNow,
+      cumulativeLast,
+    );
+
+    const margin = BigInt(pos.quote_balance.balance.amount);
+    isolatedMarginTotal += margin;
+
+    const maintenanceWeight = BigInt(
+      long
+        ? pos.base_product.risk.long_weight_maintenance_x18
+        : pos.base_product.risk.short_weight_maintenance_x18,
+    );
+    const isolatedMaintenanceHealth = BigInt(pos.healths?.[HEALTH.MAINTENANCE]?.health ?? '0');
+
+    positions.push({
+      productId: pos.base_balance.product_id,
+      symbol: symbolByProduct.get(pos.base_balance.product_id) ?? `product ${pos.base_balance.product_id}`,
+      assetClass: classify(symbolByProduct.get(pos.base_balance.product_id) ?? ''),
+      side: long ? 'long' : 'short',
+      amount,
+      oraclePriceX18: oracle,
+      entryPriceX18: entry,
+      notionalX18: notional,
+      unrealizedPnlX18: unrealized,
+      fundingX18: funding,
+      // An isolated position's margin is only ever this posted amount, not
+      // the account — that is the entire point of isolating it.
+      leverage: margin === 0n ? 0 : Number(notional) / Number(margin),
+      liquidationPriceX18: liquidationPrice(
+        amount,
+        vQuote,
+        maintenanceWeight,
+        isolatedMaintenanceHealth,
+        oracle,
+      ),
+      isolated: true,
+      isolatedMarginX18: margin,
     });
   }
 
@@ -226,6 +369,7 @@ export async function fetchAccount(
     grossNotionalX18: grossNotional,
     marginUtilisation:
       health.pnl <= 0n ? 0 : 1 - Number(health.initial) / Number(health.pnl),
+    isolatedMarginX18: isolatedMarginTotal,
   };
 }
 

@@ -37,11 +37,16 @@ const usd = (v: bigint) => (v < 0n ? `-$${fromX18(-v, 2)}` : `$${fromX18(v, 2)}`
 const signedUsd = (v: bigint) => (v < 0n ? `-$${fromX18(-v, 2)}` : `+$${fromX18(v, 2)}`);
 
 console.log(`account   ${address}\n`);
-console.log(`equity            ${usd(account.equityX18)}`);
+console.log(`equity            ${usd(account.equityX18)}   (cross subaccount only)`);
 console.log(`free collateral   ${usd(account.health.initial)}   (initial health — gates new positions)`);
 console.log(`liq buffer        ${usd(account.health.maintenance)}   (maintenance health — liquidated below $0)`);
-console.log(`gross notional    ${usd(account.grossNotionalX18)}`);
+console.log(`gross notional    ${usd(account.grossNotionalX18)}   (cross positions only)`);
 console.log(`margin used       ${(account.marginUtilisation * 100).toFixed(1)}%`);
+if (account.isolatedMarginX18 > 0n) {
+  console.log(
+    `isolated margin   ${usd(account.isolatedMarginX18)}   (locked in isolated positions below — real, but not counted above)`,
+  );
+}
 
 if (account.spot.length) {
   console.log('\ncollateral');
@@ -56,12 +61,16 @@ if (!account.positions.length) {
   console.log('\npositions');
   for (const p of account.positions) {
     console.log(
-      `\n  ${p.symbol}  ${p.side.toUpperCase()}  (${p.assetClass})`,
+      `\n  ${p.symbol}  ${p.side.toUpperCase()}  (${p.assetClass})` +
+        (p.isolated ? `  [isolated, ${usd(p.isolatedMarginX18!)} margin]` : ''),
     );
     console.log(`    size        ${fromX18(p.amount, 4)}`);
     console.log(`    entry       ${fromX18(p.entryPriceX18, 4)}`);
     console.log(`    mark        ${fromX18(p.oraclePriceX18, 4)}`);
-    console.log(`    notional    ${usd(p.notionalX18)}   (${p.leverage.toFixed(1)}x of equity)`);
+    console.log(
+      `    notional    ${usd(p.notionalX18)}   ` +
+        `(${p.leverage.toFixed(1)}x of ${p.isolated ? 'its isolated margin' : 'equity'})`,
+    );
     console.log(`    unrealized  ${signedUsd(p.unrealizedPnlX18)}`);
     console.log(`    funding     ${signedUsd(p.fundingX18)}   (unsettled, estimate)`);
     console.log(
