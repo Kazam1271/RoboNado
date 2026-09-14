@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "RoboNado — AI trading copilot for Nado's commodity, FX, and equity perpetuals on Ink L2.",
+  "description": "RoboNado — AI trading copilot for every market on Nado, the unified spot/perp/margin CLOB on Ink L2.",
   "engines": {
     "node": ">=22.6"
   },

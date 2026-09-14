@@ -18,9 +18,10 @@ import { runBot } from '../src/bot.ts';
 import { NadoGateway } from '../src/gateway.ts';
 import { TelegramBot } from '../src/telegram.ts';
 import { createTools } from '../src/tools.ts';
-import { resolveNetwork, networkBanner } from '../src/config.ts';
+import { resolveNetwork, resolveAssetClasses, networkBanner } from '../src/config.ts';
 
 const NETWORK = resolveNetwork();
+const POLICY = resolveAssetClasses();
 
 const botToken = process.env.TELEGRAM_BOT_TOKEN;
 if (!botToken) {
@@ -47,7 +48,7 @@ const allowedUserIds = new Set(
 const gateway = new NadoGateway(NETWORK);
 const builderId = Number(process.env.ROBONADO_BUILDER_ID ?? 0);
 
-const tools = createTools({ network: NETWORK, gateway, address, account, builderId });
+const tools = createTools({ network: NETWORK, gateway, address, account, builderId, policy: POLICY });
 
 // Conversational mode is a bonus, not a requirement — the bot is useful
 // without an Anthropic key, which matters while billing is being sorted out.
@@ -55,7 +56,7 @@ const hasAnthropicKey =
   !!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes('PASTE');
 
 const copilot = hasAnthropicKey
-  ? new Copilot({ network: NETWORK, gateway, address, account, builderId })
+  ? new Copilot({ network: NETWORK, gateway, address, account, builderId, policy: POLICY })
   : undefined;
 
 // Render sends SIGTERM on every deploy; drain rather than dying mid-order.
@@ -76,4 +77,5 @@ await runBot({
   tools,
   allowedUserIds,
   copilot,
+  policy: POLICY,
 });

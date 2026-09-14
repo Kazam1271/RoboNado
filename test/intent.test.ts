@@ -175,12 +175,26 @@ describe('risk policy', () => {
     );
   });
 
-  test('refuses asset classes outside the mandate', () => {
+  test('trades every asset class by default, including crypto', () => {
+    assert.doesNotThrow(() =>
+      assertWithinPolicy(
+        { market: markets.get('BTC-PERP')!, side: 'buy', notionalX18: toX18('100'), intent: 'open' },
+        healthy,
+      ),
+    );
+  });
+
+  test('refuses asset classes outside a narrowed mandate', () => {
+    const nonCryptoOnly: RiskPolicy = {
+      ...DEFAULT_POLICY,
+      allowedAssetClasses: ['commodity', 'fx', 'equity'],
+    };
     assert.throws(
       () =>
         assertWithinPolicy(
           { market: markets.get('BTC-PERP')!, side: 'buy', notionalX18: toX18('100'), intent: 'open' },
           healthy,
+          nonCryptoOnly,
         ),
       (err: unknown) => err instanceof PolicyViolation && err.rule === 'allowedAssetClasses',
     );

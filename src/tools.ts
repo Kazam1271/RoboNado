@@ -133,13 +133,13 @@ export function createTools(ctx: CopilotContext) {
       'follows real market hours and is reduce-only outside them.',
     inputSchema: z.object({
       assetClass: z
-        .enum(['commodity', 'fx', 'equity', 'all'])
+        .enum(['crypto', 'commodity', 'fx', 'equity', 'all'])
         .optional()
-        .describe('Filter by asset class. Defaults to all non-crypto markets.'),
+        .describe('Filter by asset class. Defaults to every class this copilot is allowed to trade.'),
     }),
     run: async ({ assetClass = 'all' }) => {
       const all = [...(await markets()).values()].filter((m) =>
-        assetClass === 'all' ? m.assetClass !== 'crypto' : m.assetClass === assetClass,
+        assetClass === 'all' ? policy.allowedAssetClasses.includes(m.assetClass) : m.assetClass === assetClass,
       );
       if (!all.length) return 'no markets match';
       return all

@@ -15,9 +15,10 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { Copilot } from '../src/agent.ts';
 import { NadoGateway } from '../src/gateway.ts';
 import { describePolicy } from '../src/policy.ts';
-import { resolveNetwork, networkBanner } from '../src/config.ts';
+import { resolveNetwork, resolveAssetClasses, networkBanner } from '../src/config.ts';
 
 const NETWORK = resolveNetwork();
+const POLICY = resolveAssetClasses();
 const readOnly = process.argv.includes('--read-only');
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -40,13 +41,14 @@ const copilot = new Copilot({
   address,
   account,
   builderId: Number(process.env.ROBONADO_BUILDER_ID ?? 0),
+  policy: POLICY,
 });
 
-console.log('RoboNado — commodity, FX and equity perps on Nado');
+console.log('RoboNado — every market on Nado, one copilot');
 console.log(`network ${networkBanner(NETWORK)}
  wallet ${address}`);
 console.log(account ? 'trading enabled (orders still need your confirmation)' : 'read-only');
-console.log(`\n${describePolicy()}\n`);
+console.log(`\n${describePolicy(POLICY)}\n`);
 console.log('Ask anything. "confirm <token>" approves a prepared order. Ctrl+C to exit.\n');
 
 const rl = createInterface({ input: stdin, output: stdout });

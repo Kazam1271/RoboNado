@@ -7,7 +7,10 @@ import {
   isLive,
   DEFAULT_NETWORK,
   NetworkConfigError,
+  resolveAssetClasses,
+  AssetClassConfigError,
 } from '../src/config.ts';
+import { DEFAULT_POLICY } from '../src/policy.ts';
 
 describe('network resolution', () => {
   test('defaults to testnet when unset or empty', () => {
@@ -45,5 +48,34 @@ describe('network resolution', () => {
     assert.equal(isLive('testnet'), false);
     assert.match(networkBanner('mainnet'), /MAINNET — REAL FUNDS/);
     assert.match(networkBanner('testnet'), /Ink Sepolia/);
+  });
+});
+
+describe('asset class resolution', () => {
+  test('unset trades every asset class — universal by default', () => {
+    const policy = resolveAssetClasses({});
+    assert.equal(policy, DEFAULT_POLICY);
+    assert.deepEqual(
+      [...policy.allowedAssetClasses].sort(),
+      ['commodity', 'crypto', 'equity', 'fx'],
+    );
+  });
+
+  test('narrows to a requested subset, case and whitespace insensitive', () => {
+    const policy = resolveAssetClasses({ ROBONADO_ASSET_CLASSES: ' Commodity, FX ,equity ' });
+    assert.deepEqual(policy.allowedAssetClasses, ['commodity', 'fx', 'equity']);
+  });
+
+  test('leaves every other policy field untouched', () => {
+    const policy = resolveAssetClasses({ ROBONADO_ASSET_CLASSES: 'crypto' });
+    assert.equal(policy.maxOrderNotionalX18, DEFAULT_POLICY.maxOrderNotionalX18);
+    assert.equal(policy.maxLeverage, DEFAULT_POLICY.maxLeverage);
+  });
+
+  test('throws on an unrecognised class rather than silently dropping it', () => {
+    assert.throws(
+      () => resolveAssetClasses({ ROBONADO_ASSET_CLASSES: 'commodity,memecoins' }),
+      AssetClassConfigError,
+    );
   });
 });
