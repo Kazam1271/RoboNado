@@ -52,7 +52,13 @@ differences break any bot that assumes otherwise:
 **They close.** FX follows real market hours. Outside them the venue reports
 `soft_reduce_only` and refuses to open positions. A crypto-native bot surfaces a
 bare error code; RoboNado says *"FX is closed until the weekly open — but I can
-still close your existing EUR position."*
+still close your existing EUR position."* — and, since Nado's live status only
+ever says what's true *right now*, RoboNado also estimates *when*: a rejected
+order gets "reopens in about 1d 12h," and `get_price` warns proactively once a
+pair is within two hours of closing for the weekend, before the guard ever has
+to trigger. The estimate uses the standard fixed-UTC forex week (Sunday 22:00
+– Friday 22:00 UTC) and always defers to the venue's live status as the actual
+gate — see [src/marketHours.ts](src/marketHours.ts).
 
 **FX is isolated-margin only.** `isolated_only: true` on all three pairs. An
 order that doesn't set the isolated bit and pack margin into the appendix's
@@ -82,7 +88,7 @@ no build step).
 
 ```bash
 npm install
-npm test          # 72 tests
+npm test          # 99 tests
 npm run markets   # live trading surface across every asset class, status, fee burden
 npm run dry-run   # build + sign real orders against Ink Sepolia, send nothing
 ```
@@ -124,6 +130,7 @@ Orders need a funded subaccount. On testnet both inputs are free:
 | --- | --- |
 | `src/markets.ts` | Live registry of every Nado market; classifies each into crypto, commodity, fx or equity |
 | `src/guards.ts` | Trading-status guard, isolated-margin check, fee policy |
+| `src/marketHours.ts` | Estimated FX weekly session, for pre-close/pre-open warnings only — never the actual gate |
 | `src/policy.ts` | Risk limits enforced in code — order size, exposure, leverage, allowed asset classes |
 | `src/resolve.ts` | Plain-name → symbol resolution ("gold", "bitcoin", "cable") across every class |
 | `src/appendix.ts` | The bit-packed 128-bit order appendix, including builder code |
@@ -171,7 +178,7 @@ through `units.ts` on strings, and `bigint` from there down.
 - [x] Telegram interface
 - [x] Universal coverage — every asset class tradable by default, not just the non-crypto planes
 - [x] A first live order placed, read back, and cancelled against a resting testnet book
-- [ ] Market-hours pre-open warnings ahead of the weekly FX open, not just the closed-market guard
+- [x] Market-hours pre-open warnings ahead of the weekly FX open, not just the closed-market guard
 
 ## Builder codes
 

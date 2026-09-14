@@ -9,6 +9,7 @@
 
 import type { AssetClass, MarketMeta } from './markets.ts';
 import { bpsToUnits } from './appendix.ts';
+import { fxReopenEta } from './marketHours.ts';
 
 export type Intent = 'open' | 'close';
 
@@ -29,7 +30,7 @@ export class MarketClosedError extends Error {
  * markets spend every weekend, and it still permits closing an existing
  * position, so the copilot should offer that rather than refusing outright.
  */
-export function assertTradable(market: MarketMeta, intent: Intent): void {
+export function assertTradable(market: MarketMeta, intent: Intent, now: Date = new Date()): void {
   const { symbol, tradingStatus, assetClass } = market;
 
   switch (tradingStatus) {
@@ -43,13 +44,22 @@ export function assertTradable(market: MarketMeta, intent: Intent): void {
     case 'soft_reduce_only':
     case 'reduce_only':
       if (intent === 'close') return;
+      if (assetClass === 'fx') {
+        // The live status says nothing about *when* it changes back — give
+        // an estimate rather than leaving the trader to guess or poll.
+        const eta = fxReopenEta(now);
+        throw new MarketClosedError(
+          market,
+          `${symbol} is closed for new positions — FX follows real market hours ` +
+            `and is reduce-only outside them` +
+            (eta ? `. It should reopen in about ${eta} (estimate)` : '') +
+            `. You can still close an existing position.`,
+        );
+      }
       throw new MarketClosedError(
         market,
-        assetClass === 'fx'
-          ? `${symbol} is closed for new positions — FX follows real market hours ` +
-            `and is reduce-only outside them. You can still close an existing position.`
-          : `${symbol} is reduce-only right now. You can close an existing ` +
-            `position but not open a new one.`,
+        `${symbol} is reduce-only right now. You can close an existing ` +
+          `position but not open a new one.`,
       );
 
     case 'not_tradable':
