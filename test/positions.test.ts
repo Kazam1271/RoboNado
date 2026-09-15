@@ -321,6 +321,18 @@ describe('isolated positions', () => {
     assert.equal(fromX18(account.isolatedMarginX18), '50');
   });
 
+  test('sums notional across isolated positions into the account total', async () => {
+    const account = await fetchAccount(
+      gatewayFor(idleCross, isolatedWti(x18('47'))),
+      '0xabc',
+      markets,
+    );
+    // $100 of real market exposure that grossNotionalX18 (cross-only) never
+    // sees — this is what policy.ts's totalExposure pairs with
+    // isolatedMarginX18 to close the exposure-limit blind spot.
+    assert.equal(fromX18(account.isolatedNotionalX18), '100');
+  });
+
   test('leverage is against its own margin, not the whole account', async () => {
     const account = await fetchAccount(
       gatewayFor(idleCross, isolatedWti(x18('47'))),
