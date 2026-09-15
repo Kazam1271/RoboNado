@@ -15,9 +15,9 @@
 import type { Copilot } from './agent.ts';
 import { NadoApiError, NadoGateway } from './gateway.ts';
 import { MarketClosedError } from './guards.ts';
-import { loadMarkets, type Network } from './markets.ts';
+import { loadMarkets, type MarketMeta, type Network } from './markets.ts';
 import { describePolicy, DEFAULT_POLICY, type RiskPolicy } from './policy.ts';
-import { fetchAccount } from './positions.ts';
+import { fetchAccount, type AccountSnapshot } from './positions.ts';
 import { resolveMarket, UnknownMarketError } from './resolve.ts';
 import { toSubaccountHex } from './subaccount.ts';
 import { TelegramBot, type TelegramMessage } from './telegram.ts';
@@ -38,6 +38,17 @@ export interface BotOptions {
   /** Aborted on SIGTERM so a deploy drains in-flight work before exiting. */
   signal?: AbortSignal;
   policy?: RiskPolicy;
+  /**
+   * Defaults to `loadMarkets(network)` against the live gateway. Overridable
+   * so tests can supply a fixed registry instead of hitting the network.
+   */
+  getMarkets?: () => Promise<Map<string, MarketMeta>>;
+  /**
+   * Defaults to `fetchAccount(gateway, sender, markets)`. Overridable so
+   * tests can hand `/account` a canned snapshot directly, the same way
+   * policy.ts's own tests build one, instead of a full gateway fixture.
+   */
+  readAccount?: (sender: string, markets: Map<string, MarketMeta>) => Promise<AccountSnapshot>;
 }
 
 const HELP = `RoboNado — every market on Nado, one copilot
@@ -60,6 +71,9 @@ Orders are never sent without /confirm.`;
 export async function runBot(options: BotOptions): Promise<void> {
   const { telegram, gateway, network, address, tools, allowedUserIds, copilot } = options;
   const policy = options.policy ?? DEFAULT_POLICY;
+  const getMarkets = options.getMarkets ?? (() => loadMarkets(network));
+  const readAccount =
+    options.readAccount ?? ((s: string, m: Map<string, MarketMeta>) => fetchAccount(gateway, s, m));
   const sender = toSubaccountHex(address, 'default');
   const usd = (v: bigint) => (v < 0n ? `-$${fromX18(-v, 2)}` : `$${fromX18(v, 2)}`);
 
@@ -152,8 +166,8 @@ export async function runBot(options: BotOptions): Promise<void> {
 
       case '/account': {
         await telegram.sendTyping(chatId);
-        const markets = await loadMarkets(network);
-        const account = await fetchAccount(gateway, sender, markets);
+        const markets = await getMarkets();
+        const account = await readAccount(sender, markets);
         if (!account.exists) {
           return telegram.sendMessage(chatId, 'No Nado subaccount yet — deposit at least $5 USDT0.');
         }
@@ -228,7 +242,7 @@ export async function runBot(options: BotOptions): Promise<void> {
       // Answer the most common question without an LLM rather than just
       // refusing: a bare market name almost always means "what's the price".
       try {
-        const { market } = resolveMarket(text, await loadMarkets(network));
+        const { market } = resolveMarket(text, await getMarkets());
         return telegram.sendMessage(
           chatId,
           `${await byName.get_price.run({ market: market.symbol })}\n\n` +
