@@ -59,6 +59,34 @@ export interface ProposedOrder {
 }
 
 /**
+ * Total market exposure across both margin scopes. Cross and isolated
+ * notional are each real dollars at risk, so they add directly — unlike
+ * leverage, exposure has no scope-mismatch trap to fall into.
+ */
+export function totalExposure(account: AccountSnapshot): bigint {
+  return account.grossNotionalX18 + (account.isolatedNotionalX18 ?? 0n);
+}
+
+/**
+ * Total capital backing that exposure: cross equity plus every isolated
+ * position's own posted margin. The two pools cannot back each other's
+ * positions, but both are real money the trader has committed, and a
+ * leverage cap is meant to bound risk against all of it — a trader is not
+ * meaningfully safer at "3x on the cross book" while sitting on an
+ * unrelated 20x isolated position the check never saw.
+ *
+ * Never divide `totalExposure` by `account.equityX18` alone, or
+ * `account.isolatedNotionalX18` by `account.equityX18` alone — either mixes
+ * one scope's notional against the other scope's capital and produces a
+ * meaningless ratio (this is the mistake the isolated-positions fix in
+ * positions.ts had to specifically avoid). Sum the pools on each side first,
+ * then divide.
+ */
+export function totalCapital(account: AccountSnapshot): bigint {
+  return account.equityX18 + (account.isolatedMarginX18 ?? 0n);
+}
+
+/**
  * Throws unless the proposal is within policy. Closing orders are exempt from
  * the exposure limits — a limit that prevents reducing risk is a bug, and an
  * account that has drifted over its cap must still be able to get back under.
@@ -88,25 +116,41 @@ export function assertWithinPolicy(
 
   if (intent === 'close') return;
 
-  const projectedGross = account.grossNotionalX18 + notionalX18;
+  // Exposure and leverage are checked against cross AND isolated positions
+  // together — an isolated position is real market risk the trader carries
+  // regardless of which margin pool backs it, and a cap that only ever saw
+  // the cross book could be walked straight past by opening isolated
+  // positions instead. See totalExposure/totalCapital for why these are
+  // summed rather than mixed.
+  const projectedGross = totalExposure(account) + notionalX18;
   if (projectedGross > policy.maxGrossNotionalX18) {
     throw new PolicyViolation(
       'maxGrossNotional',
-      `this would take total exposure to ${usd(projectedGross)}, over the ` +
-        `${usd(policy.maxGrossNotionalX18)} limit.`,
+      `this would take total exposure (cross + isolated) to ${usd(projectedGross)}, ` +
+        `over the ${usd(policy.maxGrossNotionalX18)} limit.`,
     );
   }
 
-  if (account.equityX18 > 0n) {
-    const projectedLeverage = Number(projectedGross) / Number(account.equityX18);
+  const capital = totalCapital(account);
+  if (capital > 0n) {
+    const projectedLeverage = Number(projectedGross) / Number(capital);
     if (projectedLeverage > policy.maxLeverage) {
       throw new PolicyViolation(
         'maxLeverage',
         `this would put you at ${projectedLeverage.toFixed(1)}x against ` +
-          `${usd(account.equityX18)} of equity; the limit is ${policy.maxLeverage}x.`,
+          `${usd(capital)} of capital (cross equity + isolated margin); ` +
+          `the limit is ${policy.maxLeverage}x.`,
       );
     }
+  }
 
+  // Free collateral is specifically a cross-account concept — isolated margin
+  // is never available to back a cross position, so it must not pad this
+  // denominator the way it correctly does for totalCapital above. Guarded on
+  // cross equity alone, not `capital`: an account that is all isolated margin
+  // and near-zero cross equity must still hit this check rather than divide
+  // by a near-zero or negative equityX18.
+  if (account.equityX18 > 0n) {
     const freeRatio = Number(account.health.initial) / Number(account.equityX18);
     if (freeRatio < policy.minFreeCollateralRatio) {
       throw new PolicyViolation(

@@ -95,15 +95,23 @@ export interface AccountSnapshot {
   marginUtilisation: number;
   /**
    * Total margin currently posted across every isolated position, x18. Real
-   * money the trader owns, but walled off: it is not part of `equityX18`
-   * above, cannot back a cross position or a different isolated one, and — by
-   * the same token — isolated exposure is not reflected in `grossNotionalX18`
-   * or checked against policy.ts's exposure limits. That is a known gap, not
-   * an oversight of this field; folding isolated and cross scopes into one
-   * number without care produces a badly wrong ratio (verified while fixing
-   * the bug this field exists to close — see the isolated-positions tests).
+   * money the trader owns, but walled off: it cannot back a cross position or
+   * a different isolated one, so it stays out of `equityX18` above — cross
+   * and isolated are different pools of capital and must not be divided
+   * against each other's counterpart (verified while fixing the bug this
+   * field exists to close — see the isolated-positions tests). policy.ts's
+   * `totalCapital` pairs this correctly with {@link isolatedNotionalX18}
+   * rather than mixing it into `equityX18` directly.
    */
   isolatedMarginX18: bigint;
+  /**
+   * Sum of absolute notionals across isolated positions only — the isolated
+   * counterpart to `grossNotionalX18`. Real market exposure that a risk check
+   * reading `grossNotionalX18` alone would never see. Pair with
+   * {@link isolatedMarginX18}, never with `equityX18` or `grossNotionalX18`
+   * from the other scope; see policy.ts's `totalExposure`/`totalCapital`.
+   */
+  isolatedNotionalX18: bigint;
 }
 
 interface RawRisk {
@@ -303,6 +311,7 @@ export async function fetchAccount(
   // self-contained oracle, risk weights and three-way health, so none of
   // this touches the cross health computed above.
   let isolatedMarginTotal = 0n;
+  let isolatedNotionalTotal = 0n;
   for (const pos of isolatedRaw.isolated_positions ?? []) {
     const amount = BigInt(pos.base_balance.balance.amount);
     if (amount === 0n) continue;
@@ -325,6 +334,7 @@ export async function fetchAccount(
 
     const margin = BigInt(pos.quote_balance.balance.amount);
     isolatedMarginTotal += margin;
+    isolatedNotionalTotal += notional;
 
     const maintenanceWeight = BigInt(
       long
@@ -370,6 +380,7 @@ export async function fetchAccount(
     marginUtilisation:
       health.pnl <= 0n ? 0 : 1 - Number(health.initial) / Number(health.pnl),
     isolatedMarginX18: isolatedMarginTotal,
+    isolatedNotionalX18: isolatedNotionalTotal,
   };
 }
 

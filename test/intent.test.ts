@@ -81,7 +81,12 @@ describe('market resolution', () => {
   });
 });
 
-const account = (equity: string, gross: string, initial?: string): AccountSnapshot =>
+const account = (
+  equity: string,
+  gross: string,
+  initial?: string,
+  isolated?: { margin: string; notional: string },
+): AccountSnapshot =>
   ({
     exists: true,
     sender: '0xabc',
@@ -95,6 +100,8 @@ const account = (equity: string, gross: string, initial?: string): AccountSnapsh
     equityX18: toX18(equity),
     grossNotionalX18: toX18(gross),
     marginUtilisation: 0,
+    isolatedMarginX18: toX18(isolated?.margin ?? '0'),
+    isolatedNotionalX18: toX18(isolated?.notional ?? '0'),
   }) as AccountSnapshot;
 
 describe('risk policy', () => {
@@ -139,6 +146,63 @@ describe('risk policy', () => {
           account('100', '0'),
         ),
       (err: unknown) => err instanceof PolicyViolation && err.rule === 'maxLeverage',
+    );
+  });
+
+  test('counts isolated exposure toward the total exposure cap', () => {
+    // No cross positions at all — a check reading grossNotionalX18 alone
+    // would see $0 of exposure and wave a $400 order straight through, even
+    // though the account already carries $1900 of real market risk via
+    // isolated positions.
+    assert.throws(
+      () =>
+        assertWithinPolicy(
+          { market: markets.get('XAUT-PERP')!, side: 'buy', notionalX18: toX18('400'), intent: 'open' },
+          account('10000', '0', undefined, { margin: '1000', notional: '1900' }),
+        ),
+      (err: unknown) => err instanceof PolicyViolation && err.rule === 'maxGrossNotional',
+    );
+  });
+
+  test('counts isolated margin toward the leverage cap\'s capital base', () => {
+    // Cross equity alone is tiny, but real capital is mostly sitting as
+    // isolated margin. A check dividing by equityX18 alone would read this
+    // as absurdly over-leveraged; totalCapital must see the isolated margin
+    // as real capital backing real (isolated) exposure.
+    assert.doesNotThrow(() =>
+      assertWithinPolicy(
+        { market: markets.get('XAUT-PERP')!, side: 'buy', notionalX18: toX18('100'), intent: 'open' },
+        account('10', '0', undefined, { margin: '990', notional: '1900' }),
+      ),
+    );
+  });
+
+  test('an isolated-only account still can\'t exceed leverage in aggregate', () => {
+    // Cross equity is zero — every dollar of capital and every dollar of
+    // exposure here is isolated. $1800 notional against $600 margin is
+    // already 3x; a further $150 order must still be caught by the leverage
+    // cap, not waved through because equityX18 alone reads as zero.
+    assert.throws(
+      () =>
+        assertWithinPolicy(
+          { market: markets.get('XAUT-PERP')!, side: 'buy', notionalX18: toX18('150'), intent: 'open' },
+          account('0', '0', '0', { margin: '600', notional: '1800' }),
+        ),
+      (err: unknown) => err instanceof PolicyViolation && err.rule === 'maxLeverage',
+    );
+  });
+
+  test('minFreeCollateral stays scoped to cross equity when isolated margin backs all real capital', () => {
+    // Cross equity is 0 (all capital moved to isolated margin), so there is
+    // no cross free-collateral ratio to speak of. totalCapital is still
+    // positive here (isolated margin), so the leverage check runs and must
+    // pass; minFreeCollateral must skip cleanly on zero cross equity rather
+    // than divide by it.
+    assert.doesNotThrow(() =>
+      assertWithinPolicy(
+        { market: markets.get('XAUT-PERP')!, side: 'buy', notionalX18: toX18('10'), intent: 'open' },
+        account('0', '0', '0', { margin: '1000', notional: '100' }),
+      ),
     );
   });
 
